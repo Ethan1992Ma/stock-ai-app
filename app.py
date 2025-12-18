@@ -27,6 +27,24 @@ st.markdown("""
     .metric-value { font-size: 1.4rem; font-weight: 800; color: #212529; margin: 5px 0; }
     .metric-sub { font-size: 0.85rem; color: #495057; }
     
+    /* 均線監控表樣式 */
+    .ma-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+        gap: 10px;
+        text-align: center;
+        background-color: #ffffff;
+        padding: 15px;
+        border-radius: 12px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+        border: 1px solid #e9ecef;
+    }
+    .ma-item { padding: 5px; }
+    .ma-label { font-size: 0.8rem; color: #666; font-weight: bold; }
+    .ma-val { font-size: 1rem; font-weight: bold; color: #333; }
+    .trend-up { color: #ff4b4b; }
+    .trend-down { color: #21c354; }
+
     /* 標籤顏色 */
     .status-badge { padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; color: white; display: inline-block; margin-top: 5px; }
     .bg-red { background-color: #ff4b4b; }
@@ -43,7 +61,8 @@ st.markdown("""
 @st.cache_data(ttl=300)
 def get_stock_data(ticker):
     stock = yf.Ticker(ticker)
-    df = stock.history(period="1y")
+    # 抓取 2 年資料以確保 200MA 能正確計算
+    df = stock.history(period="2y")
     info = stock.info
     return df, info
 
@@ -70,7 +89,7 @@ if ticker_input:
         # 1. 抓資料
         df, info = get_stock_data(ticker_input)
         
-        if not df.empty and len(df) > 60:
+        if not df.empty and len(df) > 200:
             # --- 自動策略邏輯 ---
             if strategy_mode == "🤖 自動判別 (Auto)":
                 mcap = info.get('marketCap', 0)
@@ -81,18 +100,16 @@ if ticker_input:
                     strat_fast, strat_slow = 5, 10
                     strat_desc = "🚀 小型飆股"
             
-            # 2. 計算指標
-            # A. 圖表固定均線 (5, 20, 60, 120)
-            df['MA_5'] = SMAIndicator(df['Close'], window=5).sma_indicator()
-            df['MA_20'] = SMAIndicator(df['Close'], window=20).sma_indicator()
-            df['MA_60'] = SMAIndicator(df['Close'], window=60).sma_indicator()
-            df['MA_120'] = SMAIndicator(df['Close'], window=120).sma_indicator()
+            # 2. 計算所有需要的均線 (5, 10, 20, 30, 60, 120, 200)
+            ma_days = [5, 10, 20, 30, 60, 120, 200]
+            for d in ma_days:
+                df[f'MA_{d}'] = SMAIndicator(df['Close'], window=d).sma_indicator()
             
-            # B. 策略判讀均線
+            # 3. 策略判讀均線 (動態)
             strat_fast_val = SMAIndicator(df['Close'], window=strat_fast).sma_indicator().iloc[-1]
             strat_slow_val = SMAIndicator(df['Close'], window=strat_slow).sma_indicator().iloc[-1]
             
-            # C. 其他
+            # 4. 其他指標
             df['RSI'] = RSIIndicator(df['Close'], window=14).rsi()
             macd = MACD(df['Close'])
             df['MACD'] = macd.macd()
@@ -102,8 +119,9 @@ if ticker_input:
 
             # 最新數據
             last = df.iloc[-1]
-            change = last['Close'] - df.iloc[-2]['Close']
-            pct_change = (change / df.iloc[-2]['Close']) * 100
+            prev = df.iloc[-2]
+            change = last['Close'] - prev['Close']
+            pct_change = (change / prev['Close']) * 100
             price_color = "#ff4b4b" if change > 0 else "#21c354"
             
             # --- 版面顯示 ---
@@ -145,7 +163,7 @@ if ticker_input:
                     <div class="metric-sub">{info.get('sector','N/A')}</div>
                 </div>""", unsafe_allow_html=True)
 
-            # 【區塊 B】AI 訊號卡片 (修正：RSI/MACD 資訊對稱)
+            # 【區塊 B】AI 訊號卡片
             st.markdown("#### 🤖 策略訊號解讀")
             k1, k2, k3, k4 = st.columns(4)
             
@@ -169,16 +187,24 @@ if ticker_input:
             
             # 2. 量能
             vol_r = last['Volume'] / last['Vol_MA'] if last['Vol_MA'] > 0 else 0
-            v_bg = "bg-red" if vol_r > 1.5 else ("bg-blue" if vol_r > 1.0 else "bg-gray")
+            v_msg = "量縮觀望"
+            v_bg = "bg-gray"
+            if vol_r > 1.5: 
+                v_msg = "爆量攻擊"
+                v_bg = "bg-red"
+            elif vol_r > 1.0:
+                v_msg = "溫和放量" 
+                v_bg = "bg-blue"
+            
             with k2:
                 st.markdown(f"""
                 <div class="metric-card">
-                    <div class="metric-title">量能熱度</div>
+                    <div class="metric-title">量能判讀 (RVol)</div>
                     <div class="metric-value" style="font-size:1.1rem; margin:10px 0;">{vol_r:.1f} 倍均量</div>
-                    <div><span class="status-badge {v_bg}">RVol</span></div>
+                    <div><span class="status-badge {v_bg}">{v_msg}</span></div>
                 </div>""", unsafe_allow_html=True)
 
-            # 3. MACD (補上數據)
+            # 3. MACD
             m_msg = "多方控盤" if last['Hist'] > 0 else "空方控盤"
             m_bg = "bg-red" if last['Hist'] > 0 else "bg-green"
             with k3:
@@ -187,19 +213,15 @@ if ticker_input:
                     <div class="metric-title">MACD</div>
                     <div class="metric-value" style="font-size:1.1rem; margin:10px 0;">{last['MACD']:.2f}</div>
                     <div><span class="status-badge {m_bg}">{m_msg}</span></div>
-                    <div class="metric-sub">數值為快線值</div>
+                    <div class="metric-sub">快線數值</div>
                 </div>""", unsafe_allow_html=True)
 
-            # 4. RSI (補上解讀)
+            # 4. RSI
             r_val = last['RSI']
             r_msg = "中性區域"
             r_bg = "bg-gray"
-            if r_val > 70: 
-                r_msg = "過熱警戒" 
-                r_bg = "bg-red"
-            elif r_val < 30: 
-                r_msg = "超賣區"
-                r_bg = "bg-green"
+            if r_val > 70: r_msg, r_bg = "過熱警戒", "bg-red"
+            elif r_val < 30: r_msg, r_bg = "超賣區", "bg-green"
                 
             with k4:
                 st.markdown(f"""
@@ -210,8 +232,32 @@ if ticker_input:
                     <div class="metric-sub">強弱指標</div>
                 </div>""", unsafe_allow_html=True)
 
-            # 【區塊 C】圖表 (修正：圖例只顯示 4 條線)
-            st.markdown("#### 📉 技術分析 (1年日線)")
+            # 【區塊 C】關鍵均線監控表 (新功能！)
+            st.markdown("#### 📏 關鍵均線監控 (價位 & 趨勢)")
+            
+            # 建立均線 HTML 結構
+            ma_html = '<div class="ma-grid">'
+            for d in [5, 10, 20, 30, 60, 120, 200]:
+                val = last[f'MA_{d}']
+                prev_val = prev[f'MA_{d}']
+                # 判斷趨勢箭頭
+                arrow = "🔺" if val > prev_val else "🔻"
+                color_cls = "trend-up" if val > prev_val else "trend-down"
+                
+                ma_html += f"""
+                <div class="ma-item">
+                    <div class="ma-label">MA {d}</div>
+                    <div class="ma-val {color_cls}">{arrow} {val:.2f}</div>
+                </div>
+                """
+            ma_html += '</div>'
+            st.markdown(ma_html, unsafe_allow_html=True)
+
+            # 【區塊 D】圖表 (1年日線, 只顯示 4 條線)
+            st.markdown("#### 📉 技術分析圖表 (1年日線)")
+            
+            # 為了圖表顯示，只取最近 1 年的數據
+            df_chart = df.tail(250) # 約一年交易日
             
             fig = make_subplots(
                 rows=4, cols=1, 
@@ -221,30 +267,29 @@ if ticker_input:
                 subplot_titles=("", "", "", "")
             )
 
-            # K線 (hide legend)
-            fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='K線', showlegend=False), row=1, col=1)
+            # K線
+            fig.add_trace(go.Candlestick(x=df_chart.index, open=df_chart['Open'], high=df_chart['High'], low=df_chart['Low'], close=df_chart['Close'], name='K線', showlegend=False), row=1, col=1)
             
-            # 四條均線 (Show legend)
-            fig.add_trace(go.Scatter(x=df.index, y=df['MA_5'], line=dict(color='#D500F9', width=1), name='MA5', showlegend=True), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df.index, y=df['MA_20'], line=dict(color='#FF6D00', width=1.5), name='MA20', showlegend=True), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df.index, y=df['MA_60'], line=dict(color='#00C853', width=1.5), name='MA60', showlegend=True), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df.index, y=df['MA_120'], line=dict(color='#78909C', width=1.5, dash='dot'), name='MA120', showlegend=True), row=1, col=1)
+            # 四條均線 (5, 20, 60, 120)
+            fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_5'], line=dict(color='#D500F9', width=1), name='MA5 (紫)', showlegend=True), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_20'], line=dict(color='#FF6D00', width=1.5), name='MA20 (橘)', showlegend=True), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_60'], line=dict(color='#00C853', width=1.5), name='MA60 (綠)', showlegend=True), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_120'], line=dict(color='#78909C', width=1.5, dash='dot'), name='MA120 (灰)', showlegend=True), row=1, col=1)
 
-            # 成交量 (hide legend)
-            colors = ['red' if o > c else 'green' for o, c in zip(df['Open'], df['Close'])]
-            fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=colors, name='Volume', showlegend=False), row=2, col=1)
+            # 成交量
+            colors = ['red' if o > c else 'green' for o, c in zip(df_chart['Open'], df_chart['Close'])]
+            fig.add_trace(go.Bar(x=df_chart.index, y=df_chart['Volume'], marker_color=colors, name='Volume', showlegend=False), row=2, col=1)
 
-            # RSI (hide legend)
-            fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#9C27B0', width=2), name='RSI', showlegend=False), row=3, col=1)
+            # RSI
+            fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['RSI'], line=dict(color='#9C27B0', width=2), name='RSI', showlegend=False), row=3, col=1)
             fig.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1)
             fig.add_hline(y=30, line_dash="dash", line_color="green", row=3, col=1)
 
-            # MACD (hide legend)
-            fig.add_trace(go.Scatter(x=df.index, y=df['MACD'], line=dict(color='#2196F3', width=1), name='MACD', showlegend=False), row=4, col=1)
-            fig.add_trace(go.Scatter(x=df.index, y=df['Signal'], line=dict(color='#FF5722', width=1), name='Signal', showlegend=False), row=4, col=1)
-            fig.add_trace(go.Bar(x=df.index, y=df['Hist'], marker_color=['red' if h < 0 else 'green' for h in df['Hist']], name='Hist', showlegend=False), row=4, col=1)
+            # MACD
+            fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MACD'], line=dict(color='#2196F3', width=1), name='MACD', showlegend=False), row=4, col=1)
+            fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['Signal'], line=dict(color='#FF5722', width=1), name='Signal', showlegend=False), row=4, col=1)
+            fig.add_trace(go.Bar(x=df_chart.index, y=df_chart['Hist'], marker_color=['red' if h < 0 else 'green' for h in df_chart['Hist']], name='Hist', showlegend=False), row=4, col=1)
 
-            # 佈局
             fig.update_layout(
                 height=1000, 
                 margin=dict(l=10, r=10, t=30, b=10),
@@ -264,6 +309,6 @@ if ticker_input:
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
         else:
-            st.error("資料不足，請確認股票代號。")
+            st.error("資料不足 (需至少2年數據以計算年線)，請檢查股票代號。")
     except Exception as e:
         st.error(f"系統忙碌中: {e}")
