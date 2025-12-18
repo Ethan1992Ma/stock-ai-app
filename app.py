@@ -44,8 +44,8 @@ st.markdown("""
 @st.cache_data(ttl=300)
 def get_stock_data(ticker):
     stock = yf.Ticker(ticker)
-    # 固定抓取 2 年資料
-    df = stock.history(period="2y")
+    # 修改：固定抓取 1 年資料
+    df = stock.history(period="1y")
     info = stock.info
     return df, info
 
@@ -54,9 +54,9 @@ with st.sidebar:
     st.header("⚙️ 參數設定")
     ticker_input = st.text_input("股票代號", "TSLA").upper()
     st.markdown("---")
-    ma_short = st.number_input("短線 MA", value=5)
-    ma_long = st.number_input("長線 MA", value=20)
-    vol_ma_len = st.number_input("均量天數", value=20)
+    # 這裡保留用來做卡片判讀的參數，但圖表會強制畫出 5 條線
+    ma_short = st.number_input("判讀用短線 MA", value=5)
+    ma_long = st.number_input("判讀用長線 MA", value=20)
 
 # --- 5. 主程式邏輯 ---
 if ticker_input:
@@ -64,12 +64,14 @@ if ticker_input:
         # 1. 抓資料
         df, info = get_stock_data(ticker_input)
         
-        if not df.empty and len(df) > 60:
+        if not df.empty and len(df) > 20:
             # 2. 計算指標
-            # MA
-            df['MA_S'] = SMAIndicator(df['Close'], window=ma_short).sma_indicator()
-            df['MA_L'] = SMAIndicator(df['Close'], window=ma_long).sma_indicator()
-            df['MA_60'] = SMAIndicator(df['Close'], window=60).sma_indicator() # 生命線
+            # 計算五條均線 (5, 10, 20, 60, 120)
+            df['MA_5'] = SMAIndicator(df['Close'], window=5).sma_indicator()
+            df['MA_10'] = SMAIndicator(df['Close'], window=10).sma_indicator()
+            df['MA_20'] = SMAIndicator(df['Close'], window=20).sma_indicator()
+            df['MA_60'] = SMAIndicator(df['Close'], window=60).sma_indicator()
+            df['MA_120'] = SMAIndicator(df['Close'], window=120).sma_indicator()
             
             # RSI & MACD
             df['RSI'] = RSIIndicator(df['Close'], window=14).rsi()
@@ -78,8 +80,8 @@ if ticker_input:
             df['Signal'] = macd.macd_signal()
             df['Hist'] = macd.macd_diff()
             
-            # 成交量
-            df['Vol_MA'] = SMAIndicator(df['Volume'], window=vol_ma_len).sma_indicator()
+            # 成交量均量
+            df['Vol_MA'] = SMAIndicator(df['Volume'], window=20).sma_indicator()
 
             # 最新數據
             last = df.iloc[-1]
@@ -91,7 +93,7 @@ if ticker_input:
             # --- 版面開始 ---
             st.markdown(f"### 📱 {info.get('longName', ticker_input)} ({ticker_input})")
             
-            # 【區塊 A】基本面數據 (P/E, EPS, 市值)
+            # 【區塊 A】基本面數據
             col_b1, col_b2, col_b3, col_b4 = st.columns(4)
             with col_b1:
                 st.markdown(f"""
@@ -130,30 +132,34 @@ if ticker_input:
                     <div class="metric-sub">{info.get('sector', 'N/A')}</div>
                 </div>""", unsafe_allow_html=True)
 
-            # 【區塊 B】AI 技術分析卡片 (你指定的 4 大分析)
+            # 【區塊 B】AI 技術分析卡片
             st.markdown("#### 🤖 AI 趨勢解讀")
             c1, c2, c3, c4 = st.columns(4)
             
-            # 1. 均線分析
+            # 1. 均線分析 (依然使用側邊欄設定的參數來做簡單判讀，預設 5 vs 20)
             trend_msg = "盤整 / 空頭"
             trend_bg = "bg-gray"
-            if last['Close'] > last['MA_S'] > last['MA_L']:
+            # 使用自定義的短長線來判讀
+            custom_short = SMAIndicator(df['Close'], window=ma_short).sma_indicator().iloc[-1]
+            custom_long = SMAIndicator(df['Close'], window=ma_long).sma_indicator().iloc[-1]
+            
+            if last['Close'] > custom_short > custom_long:
                 trend_msg = "多頭排列 📈"
                 trend_bg = "bg-red"
-            elif last['Close'] < last['MA_S'] < last['MA_L']:
+            elif last['Close'] < custom_short < custom_long:
                 trend_msg = "空頭排列 📉"
                 trend_bg = "bg-green"
                 
             with c1:
                 st.markdown(f"""
                 <div class="metric-card">
-                    <div class="metric-title">均線趨勢</div>
+                    <div class="metric-title">短線趨勢判讀</div>
                     <div class="metric-value" style="font-size:1.1rem; margin:10px 0;">{trend_msg}</div>
                     <div><span class="status-badge {trend_bg}">MA{ma_short} vs MA{ma_long}</span></div>
-                    <div class="metric-sub" style="margin-top:5px;">站上60日線: {"是" if last['Close']>last['MA_60'] else "否"}</div>
+                    <div class="metric-sub" style="margin-top:5px;">站上季線: {"是" if last['Close']>last['MA_60'] else "否"}</div>
                 </div>""", unsafe_allow_html=True)
 
-            # 2. 量能分析 (RVol)
+            # 2. 量能分析
             vol_ratio = last['Volume'] / last['Vol_MA'] if last['Vol_MA'] > 0 else 0
             vol_msg = "量縮觀望 💤"
             vol_bg = "bg-gray"
@@ -170,28 +176,24 @@ if ticker_input:
                     <div class="metric-title">量能分析 (RVol)</div>
                     <div class="metric-value" style="font-size:1.1rem; margin:10px 0;">{vol_msg}</div>
                     <div><span class="status-badge {vol_bg}">{vol_ratio:.1f} 倍均量</span></div>
-                    <div class="metric-sub" style="margin-top:5px;">今日vs20日均量</div>
                 </div>""", unsafe_allow_html=True)
 
-            # 3. MACD 分析
+            # 3. MACD
             macd_msg = "空方控盤 🐻"
             macd_bg = "bg-green"
             if last['Hist'] > 0:
                 macd_msg = "多方控盤 🐂"
                 macd_bg = "bg-red"
             
-            macd_strength = "動能增強 ↗" if abs(last['Hist']) > abs(prev['Hist']) else "動能減弱 ↘"
-
             with c3:
                 st.markdown(f"""
                 <div class="metric-card">
                     <div class="metric-title">MACD 籌碼</div>
                     <div class="metric-value" style="font-size:1.1rem; margin:10px 0;">{macd_msg}</div>
-                    <div><span class="status-badge {macd_bg}">{macd_strength}</span></div>
                     <div class="metric-sub" style="margin-top:5px;">柱狀圖方向判讀</div>
                 </div>""", unsafe_allow_html=True)
 
-            # 4. RSI 分析
+            # 4. RSI
             rsi_val = last['RSI']
             rsi_msg = "中性區域 ⚖️"
             rsi_bg = "bg-gray"
@@ -207,46 +209,50 @@ if ticker_input:
                 <div class="metric-card">
                     <div class="metric-title">RSI 強弱</div>
                     <div class="metric-value" style="font-size:1.1rem; margin:10px 0;">{rsi_msg}</div>
-                    <div><span class="status-badge {rsi_bg}">數值: {rsi_val:.1f}</span></div>
-                    <div class="metric-sub" style="margin-top:5px;">乖離率參考</div>
+                    <div><span class="status-badge {rsi_bg}">{rsi_val:.1f}</span></div>
                 </div>""", unsafe_allow_html=True)
 
-            # 【區塊 C】完整圖表 (2年日線)
-            st.markdown("#### 📉 技術分析圖表 (2年日線)")
+            # 【區塊 C】完整圖表 (1年日線 + 5條均線)
+            st.markdown("#### 📉 技術分析圖表 (1年日線)")
             
             fig = make_subplots(
                 rows=4, cols=1, 
                 shared_xaxes=True, 
                 vertical_spacing=0.03, 
                 row_heights=[0.5, 0.15, 0.15, 0.2],
-                subplot_titles=("價格 & 均線", "成交量", "RSI", "MACD")
+                subplot_titles=("價格 & 5條均線", "成交量", "RSI", "MACD")
             )
 
-            # 1. K線 + MA
+            # 1. K線
             fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='K線'), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df.index, y=df['MA_S'], line=dict(color='orange', width=1), name=f'MA{ma_short}'), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df.index, y=df['MA_L'], line=dict(color='purple', width=1), name=f'MA{ma_long}'), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df.index, y=df['MA_60'], line=dict(color='blue', width=1, dash='dot'), name='MA60'), row=1, col=1)
+            
+            # 2. 五條均線
+            fig.add_trace(go.Scatter(x=df.index, y=df['MA_5'], line=dict(color='#FF9800', width=1), name='5日線 (週)'), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df.index, y=df['MA_10'], line=dict(color='#03A9F4', width=1), name='10日線 (雙週)'), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df.index, y=df['MA_20'], line=dict(color='#9C27B0', width=1.5), name='20日線 (月)'), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df.index, y=df['MA_60'], line=dict(color='#4CAF50', width=1.5), name='60日線 (季)'), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df.index, y=df['MA_120'], line=dict(color='#607D8B', width=2, dash='dot'), name='120日線 (半年)'), row=1, col=1)
 
-            # 2. 成交量
+            # 3. 成交量
             colors = ['red' if o > c else 'green' for o, c in zip(df['Open'], df['Close'])]
             fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=colors, name='成交量'), row=2, col=1)
 
-            # 3. RSI
+            # 4. RSI
             fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#9C27B0', width=2), name='RSI'), row=3, col=1)
             fig.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1)
             fig.add_hline(y=30, line_dash="dash", line_color="green", row=3, col=1)
 
-            # 4. MACD
+            # 5. MACD
             fig.add_trace(go.Scatter(x=df.index, y=df['MACD'], line=dict(color='#2196F3', width=1), name='MACD'), row=4, col=1)
             fig.add_trace(go.Scatter(x=df.index, y=df['Signal'], line=dict(color='#FF5722', width=1), name='Signal'), row=4, col=1)
             fig.add_trace(go.Bar(x=df.index, y=df['Hist'], marker_color=['red' if h < 0 else 'green' for h in df['Hist']], name='Hist'), row=4, col=1)
 
             fig.update_layout(
-                height=1000, # 高度增加，確保2年資料顯示清晰
+                height=1000, 
                 margin=dict(l=10, r=10, t=20, b=10),
                 xaxis_rangeslider_visible=False,
-                showlegend=False,
+                showlegend=True, # 顯示圖例以便區分5條線
+                legend=dict(orientation="h", y=1.02, x=0, bgcolor='rgba(255,255,255,0.8)'),
                 dragmode=False
             )
             fig.update_xaxes(fixedrange=True)
