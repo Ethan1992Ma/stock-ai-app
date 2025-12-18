@@ -37,7 +37,7 @@ st.markdown(f"""
         --primary-color: #ff4b4b;
         --background-color: #f8f9fa;
         --secondary-background-color: #ffffff;
-        --text-color: #000000; /* 強制純黑 */
+        --text-color: #000000;
         --font: sans-serif;
     }}
     
@@ -604,7 +604,7 @@ if ticker_input:
                         
                         price_html += f"""<div class="spark-scale"><div style="color:{COLOR_UP}">H: {day_high_pct:+.1f}%</div><div style="margin-top:25px; color:{COLOR_DOWN}">L: {day_low_pct:+.1f}%</div></div></div>"""
                         st.markdown(price_html, unsafe_allow_html=True)
-                        st.plotly_chart(fig_spark, use_container_width=True, config={'displayModeBar': False})
+                        st.plotly_chart(fig_spark, use_container_width=True, config={'displayModeBar': False, 'staticPlot': True}) # staticPlot防止手機誤觸放大
                     else:
                         st.info("暫無即時數據")
 
@@ -712,21 +712,22 @@ if ticker_input:
                 fig_price.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_60'], line=dict(color='#00C853', width=1.5), name='MA60', showlegend=True))
                 fig_price.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_120'], line=dict(color='#78909C', width=1.5, dash='dot'), name='MA120', showlegend=True))
                 
-                # [關鍵修正] 強制圖表文字為純黑色 (解決 Dark Mode 看不到字的問題)
+                # [關鍵修正] 使用 template="plotly_white" 並 強制 theme=None
                 fig_price.update_layout(
+                    template="plotly_white",
                     height=400, 
                     margin=dict(l=10, r=10, t=10, b=100),
                     paper_bgcolor='white', plot_bgcolor='white', 
                     xaxis_rangeslider_visible=False, dragmode=False, 
-                    legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5, font=dict(color='#000000')),
-                    font=dict(color='#000000'), # 強制全域字體黑
-                    xaxis=dict(color='#000000'),
-                    yaxis=dict(color='#000000')
+                    legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5, font=dict(color='black')),
+                    font=dict(color='black'), 
+                    xaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0'),
+                    yaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0')
                 )
                 fig_price.update_xaxes(rangebreaks=range_breaks)
-                st.plotly_chart(fig_price, use_container_width=True, config={'displayModeBar': False})
+                st.plotly_chart(fig_price, use_container_width=True, config={'displayModeBar': False}, theme=None)
 
-                # --- 成交量 (暖色系分級 + Y軸空間緩衝) ---
+                # --- 成交量 ---
                 vol_colors = []
                 max_vol = 0
                 for i in range(len(df_chart)):
@@ -745,38 +746,38 @@ if ticker_input:
                 st.markdown("<div class='chart-title'>📊 成交量</div>", unsafe_allow_html=True)
                 fig_vol = go.Figure()
                 fig_vol.add_trace(go.Bar(x=df_chart.index, y=df_chart['Volume'], marker_color=vol_colors, name='Volume'))
-                # 均量線 (黑色細線)
                 fig_vol.add_trace(go.Scatter(x=df_chart.index, y=df_chart['Vol_MA'], mode='lines', line=dict(color=VOL_MA_LINE, width=1.0), name='Vol MA'))
                 
-                # [關鍵修正] 強制字體黑 + Y軸緩衝
                 fig_vol.update_layout(
+                    template="plotly_white",
                     height=250, 
                     margin=dict(l=10, r=10, t=10, b=10), 
                     paper_bgcolor='white', plot_bgcolor='white', 
                     dragmode=False, showlegend=False,
-                    yaxis=dict(range=[0, max_vol * 1.25], color='#000000'),
-                    xaxis=dict(color='#000000'),
-                    font=dict(color='#000000')
+                    yaxis=dict(range=[0, max_vol * 1.25], color='black', showgrid=True, gridcolor='#f0f0f0'),
+                    xaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0'),
+                    font=dict(color='black')
                 )
                 fig_vol.update_xaxes(rangebreaks=range_breaks)
-                st.plotly_chart(fig_vol, use_container_width=True, config={'displayModeBar': False})
+                st.plotly_chart(fig_vol, use_container_width=True, config={'displayModeBar': False}, theme=None)
 
                 st.markdown("<div class='chart-title'>⚡ RSI 相對強弱指標</div>", unsafe_allow_html=True)
                 fig_rsi = go.Figure()
                 fig_rsi.add_trace(go.Scatter(x=df_chart.index, y=df_chart['RSI'], line=dict(color='#9C27B0', width=2), name='RSI'))
-                fig_rsi.add_hline(y=70, line_dash="dash", line_color=COLOR_DOWN) # 超買用跌色
-                fig_rsi.add_hline(y=30, line_dash="dash", line_color=COLOR_UP)   # 超賣用漲色
+                fig_rsi.add_hline(y=70, line_dash="dash", line_color=COLOR_DOWN) 
+                fig_rsi.add_hline(y=30, line_dash="dash", line_color=COLOR_UP)   
                 
-                # [關鍵修正] 強制字體黑
                 fig_rsi.update_layout(
+                    template="plotly_white",
                     height=250, margin=dict(l=10, r=10, t=10, b=10), 
                     paper_bgcolor='white', plot_bgcolor='white', dragmode=False,
-                    font=dict(color='#000000'), xaxis=dict(color='#000000'), yaxis=dict(color='#000000')
+                    font=dict(color='black'), xaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0'), 
+                    yaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0')
                 )
                 fig_rsi.update_xaxes(rangebreaks=range_breaks)
-                st.plotly_chart(fig_rsi, use_container_width=True, config={'displayModeBar': False})
+                st.plotly_chart(fig_rsi, use_container_width=True, config={'displayModeBar': False}, theme=None)
 
-                # --- MACD (四色分級) ---
+                # --- MACD ---
                 full_macd_colors = []
                 for i in range(len(df)):
                     hist = df['Hist'].iloc[i]
@@ -797,14 +798,15 @@ if ticker_input:
                 fig_macd.add_trace(go.Scatter(x=df_chart.index, y=df_chart['Signal'], line=dict(color='#FF5722', width=1), name='Signal'))
                 fig_macd.add_trace(go.Bar(x=df_chart.index, y=df_chart['Hist'], marker_color=chart_macd_colors, name='Hist'))
                 
-                # [關鍵修正] 強制字體黑
                 fig_macd.update_layout(
+                    template="plotly_white",
                     height=250, margin=dict(l=10, r=10, t=10, b=10), 
                     paper_bgcolor='white', plot_bgcolor='white', dragmode=False,
-                    font=dict(color='#000000'), xaxis=dict(color='#000000'), yaxis=dict(color='#000000')
+                    font=dict(color='black'), xaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0'), 
+                    yaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0')
                 )
                 fig_macd.update_xaxes(rangebreaks=range_breaks)
-                st.plotly_chart(fig_macd, use_container_width=True, config={'displayModeBar': False})
+                st.plotly_chart(fig_macd, use_container_width=True, config={'displayModeBar': False}, theme=None)
 
                 ai_suggestion = ""
                 if trend_status == "多頭":
