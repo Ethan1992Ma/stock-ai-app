@@ -26,15 +26,38 @@ VOL_NORMAL = "#FF5733"  # 正常 (鮮橘)
 VOL_SHRINK = "#FFC300"  # 量縮 (金黃)
 VOL_MA_LINE = "#000000" # 均量線 (純黑)
 
-# --- 2. CSS 美化 ---
+# VWAP 配色
+COLOR_VWAP = "#FF9800"  # 琥珀橘
+
+# --- 2. CSS 美化 (含強制亮色模式) ---
 st.markdown(f"""
     <style>
+    /* [強制亮色模式] 覆蓋 Streamlit 預設變數 */
+    :root {{
+        --primary-color: #ff4b4b;
+        --background-color: #f8f9fa;
+        --secondary-background-color: #ffffff;
+        --text-color: #333333;
+        --font: sans-serif;
+    }}
+    
+    /* 確保主體背景色 */
     .stApp {{ background-color: #f8f9fa; }}
+    
+    /* 強制所有文字在深色模式下依然顯示為深色 */
+    h1, h2, h3, h4, h5, h6, p, div, span, label {{
+        color: #333333 !important;
+    }}
+    
+    /* 針對特定元件的反白修正 */
+    .stTextInput > label, .stNumberInput > label, .stRadio > label {{
+        color: #333333 !important;
+    }}
     
     .chart-title {{
         font-size: 1.1rem;
         font-weight: 700;
-        color: #333;
+        color: #333 !important;
         margin-top: 10px;
         margin-bottom: 0px; 
         padding-left: 5px;
@@ -49,9 +72,9 @@ st.markdown(f"""
         border: 1px solid #f0f0f0;
         position: relative;
     }}
-    .metric-title {{ color: #6c757d; font-size: 0.9rem; font-weight: 700; margin-bottom: 5px; }}
-    .metric-value {{ font-size: 1.8rem; font-weight: 800; color: #212529; }}
-    .metric-sub {{ font-size: 0.9rem; color: #888; margin-top: 5px; }}
+    .metric-title {{ color: #6c757d !important; font-size: 0.9rem; font-weight: 700; margin-bottom: 5px; }}
+    .metric-value {{ font-size: 1.8rem; font-weight: 800; color: #212529 !important; }}
+    .metric-sub {{ font-size: 0.9rem; color: #888 !important; margin-top: 5px; }}
     
     .ext-price-box {{
         background-color: #f1f3f5;
@@ -59,11 +82,11 @@ st.markdown(f"""
         border-radius: 6px;
         font-size: 0.85rem;
         font-weight: 600;
-        color: #666;
+        color: #666 !important;
         margin-top: 8px;
         display: inline-block;
     }}
-    .ext-label {{ font-size: 0.75rem; color: #999; margin-right: 5px; }}
+    .ext-label {{ font-size: 0.75rem; color: #999 !important; margin-right: 5px; }}
 
     .spark-scale {{
         position: absolute;
@@ -72,7 +95,7 @@ st.markdown(f"""
         transform: translateY(-50%);
         text-align: right;
         font-size: 0.7rem;
-        color: #adb5bd;
+        color: #adb5bd !important;
         line-height: 1.4;
         font-weight: 600;
     }}
@@ -86,8 +109,8 @@ st.markdown(f"""
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         margin-bottom: 20px;
     }}
-    .ai-title {{ font-weight: bold; font-size: 1.2rem; color: #0d47a1; margin-bottom: 10px; display: flex; align-items: center; }}
-    .ai-content {{ font-size: 1rem; color: #333; line-height: 1.6; }}
+    .ai-title {{ font-weight: bold; font-size: 1.2rem; color: #0d47a1 !important; margin-bottom: 10px; display: flex; align-items: center; }}
+    .ai-content {{ font-size: 1rem; color: #333 !important; line-height: 1.6; }}
 
     .ma-container {{
         display: flex;
@@ -108,18 +131,18 @@ st.markdown(f"""
         border-radius: 10px;
         border: 1px solid #dee2e6;
     }}
-    .ma-label {{ font-size: 0.8rem; font-weight: bold; color: #666; margin-bottom: 5px; }}
+    .ma-label {{ font-size: 0.8rem; font-weight: bold; color: #666 !important; margin-bottom: 5px; }}
     .ma-val {{ font-size: 1.1rem; font-weight: 800; }}
     
-    .txt-up {{ color: {COLOR_UP}; }}
-    .txt-down {{ color: {COLOR_DOWN}; }}
+    .txt-up {{ color: {COLOR_UP} !important; }}
+    .txt-down {{ color: {COLOR_DOWN} !important; }}
     
     .status-badge {{ 
         padding: 4px 8px; 
         border-radius: 6px; 
         font-size: 0.85rem; 
         font-weight: bold; 
-        color: white; 
+        color: white !important; 
         display: inline-block; 
         margin-top: 8px;
     }}
@@ -141,7 +164,7 @@ st.markdown(f"""
     .calc-header {{
         font-size: 1rem;
         font-weight: bold;
-        color: #444;
+        color: #444 !important;
         margin-bottom: 10px;
         border-left: 4px solid {COLOR_UP};
         padding-left: 8px;
@@ -153,12 +176,12 @@ st.markdown(f"""
         text-align: center;
         margin-top: 10px;
     }}
-    .calc-res-title {{ font-size: 0.8rem; color: #888; }}
-    .calc-res-val {{ font-size: 1.4rem; font-weight: bold; color: #333; }}
+    .calc-res-title {{ font-size: 0.8rem; color: #888 !important; }}
+    .calc-res-val {{ font-size: 1.4rem; font-weight: bold; color: #333 !important; }}
     
     .fee-badge {{
         background-color: #fff3cd;
-        color: #856404;
+        color: #856404 !important;
         padding: 5px 10px;
         border-radius: 5px;
         font-size: 0.8rem;
@@ -523,7 +546,6 @@ if ticker_input:
 
                 reg_change = regular_price - previous_close
                 reg_pct = (reg_change / previous_close) * 100
-                # 美股：綠漲紅跌 (使用自定義色)
                 reg_color = COLOR_UP if reg_change > 0 else COLOR_DOWN
 
                 if is_extended:
@@ -565,15 +587,13 @@ if ticker_input:
                         if not df_regular.empty:
                             day_open_reg = df_regular['Open'].iloc[0]
                             day_close_reg = df_regular['Close'].iloc[-1]
-                            # Sparkline: 美股綠漲紅跌
                             spark_color = COLOR_UP if day_close_reg >= day_open_reg else COLOR_DOWN
-                            # 填充色 hex轉rgba
                             fill_color = "rgba(5, 154, 129, 0.15)" if day_close_reg >= day_open_reg else "rgba(242, 54, 69, 0.15)"
                             
                             fig_spark.add_trace(go.Scatter(x=df_regular.index, y=df_regular['Close'], mode='lines', line=dict(color=spark_color, width=2), fill='tozeroy', fillcolor=fill_color))
                             
                             if 'VWAP' in df_regular.columns:
-                                fig_spark.add_trace(go.Scatter(x=df_regular.index, y=df_regular['VWAP'], mode='lines', line=dict(color='#2962FF', width=1), hoverinfo='skip'))
+                                fig_spark.add_trace(go.Scatter(x=df_regular.index, y=df_regular['VWAP'], mode='lines', line=dict(color=COLOR_VWAP, width=1), hoverinfo='skip'))
 
                         y_min = day_low * 0.999
                         y_max = day_high * 1.001
@@ -630,7 +650,7 @@ if ticker_input:
                 v_bg = "bg-gray"
                 if vol_r > 2.0: 
                     v_msg = "🔥 資金派對 (爆量)"
-                    v_bg = "bg-down" # 爆量用紅 (美股跌色，或警示色)
+                    v_bg = "bg-down" 
                     vol_status = "爆量"
                 elif vol_r > 1.0:
                     v_msg = "💧 人氣回溫" 
@@ -650,11 +670,11 @@ if ticker_input:
                 r_bg = "bg-gray"
                 if r_val > 70: 
                     r_msg = "🔥 太燙了！(過熱)" 
-                    r_bg = "bg-down" # 警戒紅
+                    r_bg = "bg-down"
                     rsi_status = "過熱"
                 elif r_val < 30: 
                     r_msg = "🧊 跌過頭囉 (超賣)"
-                    r_bg = "bg-up" # 機會綠
+                    r_bg = "bg-up"
                     rsi_status = "超賣"
                 with k4:
                     st.markdown(f"""<div class="metric-card"><div class="metric-title">RSI 強弱</div><div class="metric-value" style="font-size:1.3rem;">{r_msg}</div><div><span class="status-badge {r_bg}">數值: {r_val:.1f}</span></div><div class="metric-sub">乖離率判斷</div></div>""", unsafe_allow_html=True)
@@ -677,7 +697,6 @@ if ticker_input:
                 cutoff = df.index[-1] - pd.DateOffset(months=chart_months)
                 df_chart = df[df.index >= cutoff].copy()
                 
-                # [關鍵修正] 動態計算所有缺漏日期 (含假日)，徹底解決空格問題
                 all_dates = pd.date_range(start=df_chart.index[0], end=df_chart.index[-1])
                 missing_dates = all_dates.difference(df_chart.index)
                 range_breaks = [dict(values=missing_dates.strftime("%Y-%m-%d").tolist())]
@@ -725,7 +744,6 @@ if ticker_input:
                 # 均量線 (黑色細線)
                 fig_vol.add_trace(go.Scatter(x=df_chart.index, y=df_chart['Vol_MA'], mode='lines', line=dict(color=VOL_MA_LINE, width=1.0), name='Vol MA'))
                 
-                # [關鍵修正] Y軸加上 25% 緩衝空間，解決「滿圖」問題
                 fig_vol.update_layout(
                     height=250, 
                     margin=dict(l=10, r=10, t=10, b=10), 
