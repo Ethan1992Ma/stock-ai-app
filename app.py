@@ -29,35 +29,33 @@ VOL_MA_LINE = "#000000" # 均量線 (純黑)
 # VWAP 配色
 COLOR_VWAP = "#FF9800"  # 琥珀橘
 
-# --- 2. CSS 美化 (含強制亮色模式) ---
+# --- 2. CSS 美化 (強制亮色模式 + 強制字體黑) ---
 st.markdown(f"""
     <style>
-    /* [強制亮色模式] 覆蓋 Streamlit 預設變數 */
+    /* [強制亮色模式] */
     :root {{
         --primary-color: #ff4b4b;
         --background-color: #f8f9fa;
         --secondary-background-color: #ffffff;
-        --text-color: #333333;
+        --text-color: #000000; /* 強制純黑 */
         --font: sans-serif;
     }}
     
-    /* 確保主體背景色 */
     .stApp {{ background-color: #f8f9fa; }}
     
-    /* 強制所有文字在深色模式下依然顯示為深色 */
-    h1, h2, h3, h4, h5, h6, p, div, span, label {{
-        color: #333333 !important;
+    /* 強制所有文字深色 */
+    h1, h2, h3, h4, h5, h6, p, div, span, label, li {{
+        color: #000000 !important;
     }}
     
-    /* 針對特定元件的反白修正 */
     .stTextInput > label, .stNumberInput > label, .stRadio > label {{
-        color: #333333 !important;
+        color: #000000 !important;
     }}
     
     .chart-title {{
         font-size: 1.1rem;
         font-weight: 700;
-        color: #333 !important;
+        color: #000000 !important;
         margin-top: 10px;
         margin-bottom: 0px; 
         padding-left: 5px;
@@ -332,6 +330,7 @@ def render_calculator_tab(current_close_price, exchange_rate, quote_type):
             net_profit_usd = net_revenue_usd - real_buy_cost_usd
             net_profit_twd = net_profit_usd * exchange_rate
             
+            # 美股邏輯：獲利=綠色(Up)，虧損=紅色(Down)
             res_color = COLOR_UP if net_profit_twd >= 0 else COLOR_DOWN
             res_prefix = "+" if net_profit_twd >= 0 else ""
 
@@ -712,12 +711,17 @@ if ticker_input:
                 fig_price.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_20'], line=dict(color='#FF6D00', width=1.5), name='MA20', showlegend=True))
                 fig_price.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_60'], line=dict(color='#00C853', width=1.5), name='MA60', showlegend=True))
                 fig_price.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_120'], line=dict(color='#78909C', width=1.5, dash='dot'), name='MA120', showlegend=True))
+                
+                # [關鍵修正] 強制圖表文字為純黑色 (解決 Dark Mode 看不到字的問題)
                 fig_price.update_layout(
                     height=400, 
                     margin=dict(l=10, r=10, t=10, b=100),
                     paper_bgcolor='white', plot_bgcolor='white', 
                     xaxis_rangeslider_visible=False, dragmode=False, 
-                    legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5)
+                    legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5, font=dict(color='#000000')),
+                    font=dict(color='#000000'), # 強制全域字體黑
+                    xaxis=dict(color='#000000'),
+                    yaxis=dict(color='#000000')
                 )
                 fig_price.update_xaxes(rangebreaks=range_breaks)
                 st.plotly_chart(fig_price, use_container_width=True, config={'displayModeBar': False})
@@ -744,12 +748,15 @@ if ticker_input:
                 # 均量線 (黑色細線)
                 fig_vol.add_trace(go.Scatter(x=df_chart.index, y=df_chart['Vol_MA'], mode='lines', line=dict(color=VOL_MA_LINE, width=1.0), name='Vol MA'))
                 
+                # [關鍵修正] 強制字體黑 + Y軸緩衝
                 fig_vol.update_layout(
                     height=250, 
                     margin=dict(l=10, r=10, t=10, b=10), 
                     paper_bgcolor='white', plot_bgcolor='white', 
                     dragmode=False, showlegend=False,
-                    yaxis=dict(range=[0, max_vol * 1.25])
+                    yaxis=dict(range=[0, max_vol * 1.25], color='#000000'),
+                    xaxis=dict(color='#000000'),
+                    font=dict(color='#000000')
                 )
                 fig_vol.update_xaxes(rangebreaks=range_breaks)
                 st.plotly_chart(fig_vol, use_container_width=True, config={'displayModeBar': False})
@@ -759,7 +766,13 @@ if ticker_input:
                 fig_rsi.add_trace(go.Scatter(x=df_chart.index, y=df_chart['RSI'], line=dict(color='#9C27B0', width=2), name='RSI'))
                 fig_rsi.add_hline(y=70, line_dash="dash", line_color=COLOR_DOWN) # 超買用跌色
                 fig_rsi.add_hline(y=30, line_dash="dash", line_color=COLOR_UP)   # 超賣用漲色
-                fig_rsi.update_layout(height=250, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False)
+                
+                # [關鍵修正] 強制字體黑
+                fig_rsi.update_layout(
+                    height=250, margin=dict(l=10, r=10, t=10, b=10), 
+                    paper_bgcolor='white', plot_bgcolor='white', dragmode=False,
+                    font=dict(color='#000000'), xaxis=dict(color='#000000'), yaxis=dict(color='#000000')
+                )
                 fig_rsi.update_xaxes(rangebreaks=range_breaks)
                 st.plotly_chart(fig_rsi, use_container_width=True, config={'displayModeBar': False})
 
@@ -783,7 +796,13 @@ if ticker_input:
                 fig_macd.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MACD'], line=dict(color='#2196F3', width=1), name='MACD'))
                 fig_macd.add_trace(go.Scatter(x=df_chart.index, y=df_chart['Signal'], line=dict(color='#FF5722', width=1), name='Signal'))
                 fig_macd.add_trace(go.Bar(x=df_chart.index, y=df_chart['Hist'], marker_color=chart_macd_colors, name='Hist'))
-                fig_macd.update_layout(height=250, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False)
+                
+                # [關鍵修正] 強制字體黑
+                fig_macd.update_layout(
+                    height=250, margin=dict(l=10, r=10, t=10, b=10), 
+                    paper_bgcolor='white', plot_bgcolor='white', dragmode=False,
+                    font=dict(color='#000000'), xaxis=dict(color='#000000'), yaxis=dict(color='#000000')
+                )
                 fig_macd.update_xaxes(rangebreaks=range_breaks)
                 st.plotly_chart(fig_macd, use_container_width=True, config={'displayModeBar': False})
 
