@@ -22,14 +22,25 @@ st.markdown("""
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         margin-bottom: 10px;
         border: 1px solid #f0f0f0;
+        position: relative;
     }
     .metric-title { color: #6c757d; font-size: 0.9rem; font-weight: 700; margin-bottom: 5px; }
-    .metric-value { font-size: 1.6rem; font-weight: 800; color: #212529; }
-    .metric-sub { font-size: 0.85rem; color: #888; margin-top: 5px; }
+    .metric-value { font-size: 1.8rem; font-weight: 800; color: #212529; }
+    .metric-sub { font-size: 0.9rem; color: #888; margin-top: 5px; }
     
+    /* 當日走勢專用樣式 */
+    .intra-info { 
+        display: flex; 
+        justify-content: space-between; 
+        font-size: 0.8rem; 
+        color: #aaa; 
+        margin-top: 5px; 
+        margin-bottom: 5px;
+    }
+
     /* AI 總結卡片樣式 */
     .ai-summary-card {
-        background-color: #e3f2fd; /* 淺藍色背景 */
+        background-color: #e3f2fd;
         padding: 20px;
         border-radius: 15px;
         border-left: 5px solid #2196f3;
@@ -92,7 +103,7 @@ def get_stock_data(ticker):
     stock = yf.Ticker(ticker)
     # 歷史資料 (2年)
     df = stock.history(period="2y")
-    # 當日走勢資料 (1天, 5分K) - 用於小圖
+    # 當日走勢資料 (1天, 5分K)
     df_intra = stock.history(period="1d", interval="5m")
     info = stock.info
     return df, df_intra, info
@@ -136,11 +147,9 @@ if ticker_input:
             for d in ma_list:
                 df[f'MA_{d}'] = SMAIndicator(df['Close'], window=d).sma_indicator()
             
-            # 策略判讀均線
             strat_fast_val = SMAIndicator(df['Close'], window=strat_fast).sma_indicator().iloc[-1]
             strat_slow_val = SMAIndicator(df['Close'], window=strat_slow).sma_indicator().iloc[-1]
             
-            # 其他
             df['RSI'] = RSIIndicator(df['Close'], window=14).rsi()
             macd = MACD(df['Close'])
             df['MACD'] = macd.macd()
@@ -159,45 +168,68 @@ if ticker_input:
             st.markdown(f"### 📱 {info.get('longName', ticker_input)} ({ticker_input})")
             st.caption(f"目前策略：{strat_desc}")
 
-            # 【區塊 A】基本面與價格 (新增當日走勢小圖)
+            # 【區塊 A】基本面與價格 (當日走勢修復版)
             c1, c2, c3, c4 = st.columns(4)
             with c1:
-                # 股價資訊
-                st.markdown(f"""
-                <div class="metric-card" style="padding-bottom: 0px; border-bottom: none; border-bottom-left-radius: 0; border-bottom-right-radius: 0;">
-                    <div class="metric-title">最新股價</div>
-                    <div class="metric-value" style="color:{price_color}">{last['Close']:.2f}</div>
-                    <div class="metric-sub">{('+' if change > 0 else '')}{change:.2f} ({pct_change:.2f}%)</div>
-                </div>""", unsafe_allow_html=True)
+                # 準備當日走勢圖
+                fig_spark = go.Figure()
                 
-                # 當日走勢 Sparkline (使用 Plotly 繪製極簡圖)
                 if not df_intra.empty:
-                    fig_spark = go.Figure()
-                    # 判斷當日漲跌顏色
                     day_open = df_intra['Open'].iloc[0]
                     day_close = df_intra['Close'].iloc[-1]
-                    spark_color = '#ff4b4b' if day_close >= day_open else '#21c354'
+                    day_high = df_intra['High'].max()
+                    day_low = df_intra['Low'].min()
                     
+                    spark_color = '#ff4b4b' if day_close >= day_open else '#21c354'
+                    fill_color = f"rgba({255 if day_close>=day_open else 33}, {75 if day_close>=day_open else 195}, {75 if day_close>=day_open else 84}, 0.1)"
+                    
+                    # 繪製走勢
                     fig_spark.add_trace(go.Scatter(
                         x=df_intra.index, y=df_intra['Close'],
                         mode='lines',
                         line=dict(color=spark_color, width=2),
-                        fill='tozeroy', # 填充面積
-                        fillcolor=f"rgba({255 if day_close>=day_open else 33}, {75 if day_close>=day_open else 195}, {75 if day_close>=day_open else 84}, 0.1)"
+                        fill='tozeroy', 
+                        fillcolor=fill_color
                     ))
+                    
+                    # 關鍵修復：動態設定 Y 軸範圍，避免變成直線
+                    # 稍微上下留白 1% 讓圖形好看
+                    y_min = day_low * 0.999
+                    y_max = day_high * 1.001
+                    
                     fig_spark.update_layout(
-                        height=60, # 極短高度
-                        margin=dict(l=0, r=0, t=0, b=0),
+                        height=80, # 高度增加
+                        margin=dict(l=0, r=0, t=5, b=5),
                         xaxis=dict(visible=False),
-                        yaxis=dict(visible=False),
+                        yaxis=dict(visible=False, range=[y_min, y_max]), # 強制範圍
                         paper_bgcolor='rgba(0,0,0,0)',
                         plot_bgcolor='rgba(0,0,0,0)',
                         showlegend=False,
                         dragmode=False
                     )
+                    
+                    # 生成 HTML
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-title">最新股價</div>
+                        <div class="metric-value" style="color:{price_color}">{last['Close']:.2f}</div>
+                        <div class="metric-sub">
+                            {('+' if change > 0 else '')}{change:.2f} ({pct_change:.2f}%)
+                        </div>
+                        <div class="intra-info">
+                            <span>H: {day_high:.2f}</span>
+                            <span>L: {day_low:.2f}</span>
+                        </div>
+                    </div>""", unsafe_allow_html=True)
+                    # 插入圖表 (為了讓它在卡片內，使用 margin-top 負值技巧或直接顯示)
                     st.plotly_chart(fig_spark, use_container_width=True, config={'displayModeBar': False})
                 else:
-                    st.caption("無當日走勢資料")
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-title">最新股價</div>
+                        <div class="metric-value" style="color:{price_color}">{last['Close']:.2f}</div>
+                        <div class="metric-sub">休市或無當日資料</div>
+                    </div>""", unsafe_allow_html=True)
 
             with c2:
                 pe = info.get('trailingPE', 'N/A')
@@ -225,11 +257,10 @@ if ticker_input:
                     <div class="metric-sub">{info.get('sector','N/A')}</div>
                 </div>""", unsafe_allow_html=True)
 
-            # 【區塊 B】AI 訊號卡片 (活潑版)
+            # 【區塊 B】AI 訊號卡片
             st.markdown("#### 🤖 策略訊號解讀")
             k1, k2, k3, k4 = st.columns(4)
             
-            # 變數準備
             trend_status = "盤整"
             rsi_status = "中性"
             vol_status = "一般"
@@ -239,7 +270,6 @@ if ticker_input:
             trend_msg = "💤 睡覺行情 (盤整)"
             trend_bg = "bg-gray"
             trend_desc = "多空不明，建議觀望"
-            
             if last['Close'] > strat_fast_val > strat_slow_val:
                 trend_msg = "🚀 火力全開！(多頭)"
                 trend_bg = "bg-red"
@@ -356,9 +386,7 @@ if ticker_input:
             fig.update_yaxes(fixedrange=True)
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-            # 【區塊 E】AI 綜合判讀 (新功能！)
-            
-            # 自動生成判讀文字
+            # 【區塊 E】AI 綜合判讀
             ai_suggestion = ""
             if trend_status == "多頭":
                 ai_suggestion += f"目前 {ticker_input} 呈現多頭排列，均線向上發散，顯示買盤力道強勁。"
