@@ -7,20 +7,20 @@ from ta.momentum import RSIIndicator
 from datetime import time
 
 # --- 1. 網頁設定 ---
-st.set_page_config(page_title="AI 智能操盤戰情室 (VIP配色版)", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="AI 智能操盤戰情室 (VIP 終極版)", layout="wide", initial_sidebar_state="collapsed")
 
-# --- 定義全域配色常數 (用戶客製化) ---
+# --- 定義全域配色常數 (VIP 客製化) ---
 COLOR_UP = "#059a81"      # 上漲 (松石綠)
 COLOR_DOWN = "#f23645"    # 下跌 (法拉利紅)
 COLOR_NEUTRAL = "#adb5bd" # 中性灰
 
-# MACD 保持你原本指定的四色分級 (這組跟新的紅綠也很搭)
+# MACD 配色
 MACD_BULL_GROW = "#2db09c"   # 深綠
 MACD_BULL_SHRINK = "#a8e0d1" # 淺綠
 MACD_BEAR_GROW = "#ff6666"   # 深紅
 MACD_BEAR_SHRINK = "#ffcccc" # 淺紅
 
-# 成交量客製化 (暖色系分級)
+# 成交量配色 (暖色系分級)
 VOL_EXPLODE = "#C70039" # 爆量 (深紅)
 VOL_NORMAL = "#FF5733"  # 正常 (鮮橘)
 VOL_SHRINK = "#FFC300"  # 量縮 (金黃)
@@ -111,7 +111,6 @@ st.markdown(f"""
     .ma-label {{ font-size: 0.8rem; font-weight: bold; color: #666; margin-bottom: 5px; }}
     .ma-val {{ font-size: 1.1rem; font-weight: 800; }}
     
-    /* 動態顏色類別 */
     .txt-up {{ color: {COLOR_UP}; }}
     .txt-down {{ color: {COLOR_DOWN}; }}
     
@@ -125,7 +124,6 @@ st.markdown(f"""
         margin-top: 8px;
     }}
     
-    /* 背景色設定 */
     .bg-up {{ background-color: {COLOR_UP}; }}
     .bg-down {{ background-color: {COLOR_DOWN}; }}
     .bg-gray {{ background-color: {COLOR_NEUTRAL}; }}
@@ -311,7 +309,6 @@ def render_calculator_tab(current_close_price, exchange_rate, quote_type):
             net_profit_usd = net_revenue_usd - real_buy_cost_usd
             net_profit_twd = net_profit_usd * exchange_rate
             
-            # 美股邏輯：獲利=綠色(Up)，虧損=紅色(Down)
             res_color = COLOR_UP if net_profit_twd >= 0 else COLOR_DOWN
             res_prefix = "+" if net_profit_twd >= 0 else ""
 
@@ -526,6 +523,7 @@ if ticker_input:
 
                 reg_change = regular_price - previous_close
                 reg_pct = (reg_change / previous_close) * 100
+                # 美股：綠漲紅跌 (使用自定義色)
                 reg_color = COLOR_UP if reg_change > 0 else COLOR_DOWN
 
                 if is_extended:
@@ -569,7 +567,7 @@ if ticker_input:
                             day_close_reg = df_regular['Close'].iloc[-1]
                             # Sparkline: 美股綠漲紅跌
                             spark_color = COLOR_UP if day_close_reg >= day_open_reg else COLOR_DOWN
-                            # 填充色也要跟著變 (使用 hex 轉 rgba 的簡化邏輯)
+                            # 填充色 hex轉rgba
                             fill_color = "rgba(5, 154, 129, 0.15)" if day_close_reg >= day_open_reg else "rgba(242, 54, 69, 0.15)"
                             
                             fig_spark.add_trace(go.Scatter(x=df_regular.index, y=df_regular['Close'], mode='lines', line=dict(color=spark_color, width=2), fill='tozeroy', fillcolor=fill_color))
@@ -632,7 +630,7 @@ if ticker_input:
                 v_bg = "bg-gray"
                 if vol_r > 2.0: 
                     v_msg = "🔥 資金派對 (爆量)"
-                    v_bg = "bg-down" # 爆量用紅色警示
+                    v_bg = "bg-down" # 爆量用紅 (美股跌色，或警示色)
                     vol_status = "爆量"
                 elif vol_r > 1.0:
                     v_msg = "💧 人氣回溫" 
@@ -652,11 +650,11 @@ if ticker_input:
                 r_bg = "bg-gray"
                 if r_val > 70: 
                     r_msg = "🔥 太燙了！(過熱)" 
-                    r_bg = "bg-down"
+                    r_bg = "bg-down" # 警戒紅
                     rsi_status = "過熱"
                 elif r_val < 30: 
                     r_msg = "🧊 跌過頭囉 (超賣)"
-                    r_bg = "bg-up"
+                    r_bg = "bg-up" # 機會綠
                     rsi_status = "超賣"
                 with k4:
                     st.markdown(f"""<div class="metric-card"><div class="metric-title">RSI 強弱</div><div class="metric-value" style="font-size:1.3rem;">{r_msg}</div><div><span class="status-badge {r_bg}">數值: {r_val:.1f}</span></div><div class="metric-sub">乖離率判斷</div></div>""", unsafe_allow_html=True)
@@ -679,11 +677,13 @@ if ticker_input:
                 cutoff = df.index[-1] - pd.DateOffset(months=chart_months)
                 df_chart = df[df.index >= cutoff].copy()
                 
-                no_weekends = [dict(bounds=["sat", "mon"])]
+                # [關鍵修正] 動態計算所有缺漏日期 (含假日)，徹底解決空格問題
+                all_dates = pd.date_range(start=df_chart.index[0], end=df_chart.index[-1])
+                missing_dates = all_dates.difference(df_chart.index)
+                range_breaks = [dict(values=missing_dates.strftime("%Y-%m-%d").tolist())]
 
                 st.markdown("<div class='chart-title'>📈 股價走勢 & 均線</div>", unsafe_allow_html=True)
                 fig_price = go.Figure()
-                # K線圖 (美股配色)
                 fig_price.add_trace(go.Candlestick(
                     x=df_chart.index, open=df_chart['Open'], high=df_chart['High'], low=df_chart['Low'], close=df_chart['Close'], 
                     name='K線', showlegend=False,
@@ -700,15 +700,19 @@ if ticker_input:
                     xaxis_rangeslider_visible=False, dragmode=False, 
                     legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5)
                 )
-                fig_price.update_xaxes(rangebreaks=no_weekends)
+                fig_price.update_xaxes(rangebreaks=range_breaks)
                 st.plotly_chart(fig_price, use_container_width=True, config={'displayModeBar': False})
 
-                # --- 成交量 (暖色系分級) ---
+                # --- 成交量 (暖色系分級 + Y軸空間緩衝) ---
                 vol_colors = []
+                max_vol = 0
                 for i in range(len(df_chart)):
                     row = df_chart.iloc[i]
-                    vol_ma_val = row['Vol_MA'] if pd.notna(row['Vol_MA']) and row['Vol_MA'] > 0 else row['Volume']
-                    ratio = row['Volume'] / vol_ma_val if vol_ma_val > 0 else 1.0
+                    vol = row['Volume']
+                    if vol > max_vol: max_vol = vol
+                    
+                    vol_ma_val = row['Vol_MA'] if pd.notna(row['Vol_MA']) and row['Vol_MA'] > 0 else vol
+                    ratio = vol / vol_ma_val if vol_ma_val > 0 else 1.0
                     
                     if ratio >= 2.0: c = VOL_EXPLODE
                     elif ratio >= 1.0: c = VOL_NORMAL
@@ -721,8 +725,15 @@ if ticker_input:
                 # 均量線 (黑色細線)
                 fig_vol.add_trace(go.Scatter(x=df_chart.index, y=df_chart['Vol_MA'], mode='lines', line=dict(color=VOL_MA_LINE, width=1.0), name='Vol MA'))
                 
-                fig_vol.update_layout(height=250, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False, showlegend=False)
-                fig_vol.update_xaxes(rangebreaks=no_weekends)
+                # [關鍵修正] Y軸加上 25% 緩衝空間，解決「滿圖」問題
+                fig_vol.update_layout(
+                    height=250, 
+                    margin=dict(l=10, r=10, t=10, b=10), 
+                    paper_bgcolor='white', plot_bgcolor='white', 
+                    dragmode=False, showlegend=False,
+                    yaxis=dict(range=[0, max_vol * 1.25])
+                )
+                fig_vol.update_xaxes(rangebreaks=range_breaks)
                 st.plotly_chart(fig_vol, use_container_width=True, config={'displayModeBar': False})
 
                 st.markdown("<div class='chart-title'>⚡ RSI 相對強弱指標</div>", unsafe_allow_html=True)
@@ -731,7 +742,7 @@ if ticker_input:
                 fig_rsi.add_hline(y=70, line_dash="dash", line_color=COLOR_DOWN) # 超買用跌色
                 fig_rsi.add_hline(y=30, line_dash="dash", line_color=COLOR_UP)   # 超賣用漲色
                 fig_rsi.update_layout(height=250, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False)
-                fig_rsi.update_xaxes(rangebreaks=no_weekends)
+                fig_rsi.update_xaxes(rangebreaks=range_breaks)
                 st.plotly_chart(fig_rsi, use_container_width=True, config={'displayModeBar': False})
 
                 # --- MACD (四色分級) ---
@@ -755,7 +766,7 @@ if ticker_input:
                 fig_macd.add_trace(go.Scatter(x=df_chart.index, y=df_chart['Signal'], line=dict(color='#FF5722', width=1), name='Signal'))
                 fig_macd.add_trace(go.Bar(x=df_chart.index, y=df_chart['Hist'], marker_color=chart_macd_colors, name='Hist'))
                 fig_macd.update_layout(height=250, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False)
-                fig_macd.update_xaxes(rangebreaks=no_weekends)
+                fig_macd.update_xaxes(rangebreaks=range_breaks)
                 st.plotly_chart(fig_macd, use_container_width=True, config={'displayModeBar': False})
 
                 ai_suggestion = ""
