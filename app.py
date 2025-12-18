@@ -43,7 +43,7 @@ st.markdown(f"""
     
     .stApp {{ background-color: #f8f9fa; }}
     
-    /* 強制所有文字深色 */
+    /* 強制所有文字深色 (解決 iPhone Dark Mode 問題) */
     h1, h2, h3, h4, h5, h6, p, div, span, label, li {{
         color: #000000 !important;
     }}
@@ -80,7 +80,6 @@ st.markdown(f"""
         border-radius: 6px;
         font-size: 0.85rem;
         font-weight: 600;
-        color: #666 !important;
         margin-top: 8px;
         display: inline-block;
     }}
@@ -93,7 +92,6 @@ st.markdown(f"""
         transform: translateY(-50%);
         text-align: right;
         font-size: 0.7rem;
-        color: #adb5bd !important;
         line-height: 1.4;
         font-weight: 600;
     }}
@@ -266,8 +264,8 @@ def render_calculator_tab(current_close_price, exchange_rate, quote_type):
             st.markdown(f"""
             <div class="calc-result">
                 <div class="calc-res-title">可購買股數</div>
-                <div class="calc-res-val" style="color:#0d6efd">{max_shares:.2f} 股</div>
-                <div style="font-size:0.8rem; margin-top:5px; color:#666">
+                <div class="calc-res-val" style="color:{COLOR_UP} !important;">{max_shares:.2f} 股</div>
+                <div style="font-size:0.8rem; margin-top:5px; color:#666 !important;">
                 總成本: ${total_buy_cost_usd:.2f} USD (約 {total_buy_cost_twd:.0f} TWD)
                 </div>
             </div>
@@ -314,8 +312,8 @@ def render_calculator_tab(current_close_price, exchange_rate, quote_type):
             st.markdown(f"""
             <div class="calc-result">
                 <div class="calc-res-title">建議掛單賣出價</div>
-                <div class="calc-res-val" style="color:{COLOR_UP}">${target_sell_price:.2f}</div>
-                <div style="font-size:0.8rem; color:{COLOR_UP}">需上漲 {pct_need:.1f}%</div>
+                <div class="calc-res-val" style="color:{COLOR_UP} !important;">${target_sell_price:.2f}</div>
+                <div style="font-size:0.8rem; color:{COLOR_UP} !important;">需上漲 {pct_need:.1f}%</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -337,8 +335,8 @@ def render_calculator_tab(current_close_price, exchange_rate, quote_type):
             st.markdown(f"""
             <div class="calc-result">
                 <div class="calc-res-title">預估淨獲利 (TWD)</div>
-                <div class="calc-res-val" style="color:{res_color}">{res_prefix}{net_profit_twd:.0f} 元</div>
-                <div style="font-size:0.8rem; color:#666">
+                <div class="calc-res-val" style="color:{res_color} !important;">{res_prefix}{net_profit_twd:.0f} 元</div>
+                <div style="font-size:0.8rem; color:#666 !important;">
                 美金損益: {res_prefix}${net_profit_usd:.2f}
                 </div>
             </div>
@@ -404,7 +402,7 @@ def render_inventory_tab(current_close_price, quote_type):
         <div class="metric-title">加碼後平均成交價</div>
         <div style="display:flex; justify-content:space-between; align-items:end;">
             <div class="metric-value">${new_avg_price:.2f}</div>
-            <div style="color:{COLOR_UP if new_avg_price < curr_avg_price else '#888'}; font-weight:bold;">
+            <div style="color:{COLOR_UP if new_avg_price < curr_avg_price else '#888'} !important; font-weight:bold;">
                 {f'⬇ 下降 ${curr_avg_price - new_avg_price:.2f}' if new_avg_price < curr_avg_price else '變動不大'}
             </div>
         </div>
@@ -423,7 +421,7 @@ def render_inventory_tab(current_close_price, quote_type):
         st.markdown(f"""
         <div class="calc-result">
             <div class="calc-res-title">預估總損益 (含費)</div>
-            <div class="calc-res-val" style="color:{pl_color}">${unrealized_pl:.2f}</div>
+            <div class="calc-res-val" style="color:{pl_color} !important;">${unrealized_pl:.2f}</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -598,13 +596,18 @@ if ticker_input:
                         y_max = day_high * 1.001
                         fig_spark.update_layout(height=80, margin=dict(l=0, r=40, t=5, b=5), xaxis=dict(visible=False), yaxis=dict(visible=False, range=[y_min, y_max]), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False, dragmode=False)
                         
-                        price_html = f"""<div class="metric-card"><div class="metric-title">最新股價</div><div class="metric-value" style="color:{reg_color}">{regular_price:.2f}</div><div class="metric-sub">{('+' if reg_change > 0 else '')}{reg_change:.2f} ({reg_pct:.2f}%)</div>"""
-                        if is_extended:
-                            price_html += f"""<div class="ext-price-box"><span class="ext-label">{ext_label}</span><span style="color:{ext_color}">{ext_price:.2f} ({('+' if ext_pct > 0 else '')}{ext_pct:.2f}%)</span></div>"""
+                        price_html = f"""<div class="metric-card"><div class="metric-title">最新股價</div><div class="metric-value" style="color:{reg_color} !important;">{regular_price:.2f}</div><div class="metric-sub" style="color:{reg_color} !important;">{('+' if reg_change > 0 else '')}{reg_change:.2f} ({reg_pct:.2f}%)</div>"""
                         
-                        price_html += f"""<div class="spark-scale"><div style="color:{COLOR_UP}">H: {day_high_pct:+.1f}%</div><div style="margin-top:25px; color:{COLOR_DOWN}">L: {day_low_pct:+.1f}%</div></div></div>"""
+                        if is_extended:
+                            price_html += f"""<div class="ext-price-box"><span class="ext-label">{ext_label}</span><span style="color:{ext_color} !important;">{ext_price:.2f} ({('+' if ext_pct > 0 else '')}{ext_pct:.2f}%)</span></div>"""
+                        
+                        # [修正重點] H/L 的顏色加入 !important
+                        color_h = COLOR_UP if day_high_pct >= 0 else COLOR_DOWN
+                        color_l = COLOR_UP if day_low_pct >= 0 else COLOR_DOWN
+                        
+                        price_html += f"""<div class="spark-scale"><div style="color:{color_h} !important;">H: {day_high_pct:+.1f}%</div><div style="margin-top:25px; color:{color_l} !important;">L: {day_low_pct:+.1f}%</div></div></div>"""
                         st.markdown(price_html, unsafe_allow_html=True)
-                        st.plotly_chart(fig_spark, use_container_width=True, config={'displayModeBar': False, 'staticPlot': True}) # staticPlot防止手機誤觸放大
+                        st.plotly_chart(fig_spark, use_container_width=True, config={'displayModeBar': False, 'staticPlot': True})
                     else:
                         st.info("暫無即時數據")
 
@@ -712,7 +715,6 @@ if ticker_input:
                 fig_price.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_60'], line=dict(color='#00C853', width=1.5), name='MA60', showlegend=True))
                 fig_price.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_120'], line=dict(color='#78909C', width=1.5, dash='dot'), name='MA120', showlegend=True))
                 
-                # [關鍵修正] 使用 template="plotly_white" 並 強制 theme=None
                 fig_price.update_layout(
                     template="plotly_white",
                     height=400, 
