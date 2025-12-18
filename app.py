@@ -151,6 +151,12 @@ st.markdown("""
         align-items: center;
         gap: 5px;
     }
+    
+    /* 調整Radio Button樣式讓它像分頁按鈕 */
+    div[role="radiogroup"] {
+        background-color: transparent;
+        border: none;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -174,7 +180,6 @@ def fetch_exchange_rate_now():
         return 32.5
 
 # --- 4. 定義局部刷新元件 (@st.fragment) ---
-# 這就是解決「跳頁」問題的核心，這個函數內的變動不會影響外面的分頁
 @st.fragment
 def render_calculator_tab(current_close_price, exchange_rate, quote_type):
     st.markdown("#### 🧮 交易前規劃")
@@ -205,7 +210,6 @@ def render_calculator_tab(current_close_price, exchange_rate, quote_type):
         with bc1:
             budget_twd = st.number_input("台幣預算 (TWD)", value=100000, step=1000, key="budget_input")
         with bc2:
-            # 鎖定預設值邏輯
             if "buy_price_input" not in st.session_state:
                 st.session_state.buy_price_input = float(current_close_price)
             
@@ -446,7 +450,6 @@ if ticker_input:
         if not df.empty and len(df) > 200:
             
             # --- A. 指標計算 (技術分析邏輯) ---
-            # ... (這裡與原本相同，僅顯示關鍵結果) ...
             if strategy_mode == "🤖 自動判別 (Auto)":
                 mcap = info.get('marketCap', 0)
                 if mcap > 200_000_000_000:
@@ -478,10 +481,9 @@ if ticker_input:
             tab_analysis, tab_calc, tab_inv = st.tabs(["📊 技術分析", "🧮 交易計算", "📦 庫存管理"])
 
             # ==========================================
-            # 分頁 1: 技術分析 (內容不變)
+            # 分頁 1: 技術分析
             # ==========================================
             with tab_analysis:
-                # ... (技術分析圖表繪製邏輯完全同上) ...
                 if not df_intra.empty:
                     df_intra['Cum_Vol'] = df_intra['Volume'].cumsum()
                     df_intra['Cum_Vol_Price'] = (df_intra['Close'] * df_intra['Volume']).cumsum()
@@ -654,9 +656,28 @@ if ticker_input:
                 st.markdown(f'<div class="ma-container">{ma_html_inner}</div>', unsafe_allow_html=True)
 
                 st.markdown("#### 📉 技術分析")
-                df_chart = df.tail(250) 
                 
-                st.markdown("<div class='chart-title'>📈 股價走勢 & 均線 (1年)</div>", unsafe_allow_html=True)
+                # --- [新增] 時間區間選擇器 ---
+                st.write("##### 📅 歷史走勢區間")
+                range_col1, range_col2 = st.columns([1, 3])
+                with range_col1:
+                    chart_range = st.radio(" ", ["1個月", "3個月", "6個月", "1年"], horizontal=True, index=3, label_visibility="collapsed")
+                
+                # 根據選擇切片資料
+                cutoff = df.index[-1]
+                if chart_range == "1個月":
+                    cutoff = cutoff - pd.DateOffset(months=1)
+                elif chart_range == "3個月":
+                    cutoff = cutoff - pd.DateOffset(months=3)
+                elif chart_range == "6個月":
+                    cutoff = cutoff - pd.DateOffset(months=6)
+                else:
+                    cutoff = cutoff - pd.DateOffset(years=1)
+                
+                df_chart = df[df.index >= cutoff]
+                # ----------------------------
+
+                st.markdown("<div class='chart-title'>📈 股價走勢 & 均線</div>", unsafe_allow_html=True)
                 fig_price = go.Figure()
                 fig_price.add_trace(go.Candlestick(x=df_chart.index, open=df_chart['Open'], high=df_chart['High'], low=df_chart['Low'], close=df_chart['Close'], name='K線', showlegend=False))
                 fig_price.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_5'], line=dict(color='#D500F9', width=1), name='MA5', showlegend=True))
