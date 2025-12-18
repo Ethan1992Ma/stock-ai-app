@@ -24,10 +24,10 @@ st.markdown("""
         border: 1px solid #f0f0f0;
     }
     .metric-title { color: #6c757d; font-size: 0.9rem; font-weight: 700; margin-bottom: 5px; }
-    .metric-value { font-size: 1.6rem; font-weight: 800; color: #212529; }
+    .metric-value { font-size: 1.5rem; font-weight: 800; color: #212529; }
     .metric-sub { font-size: 0.85rem; color: #888; margin-top: 5px; }
     
-    /* 均線監控容器 (Flexbox 修復版) */
+    /* 均線監控容器 */
     .ma-container {
         display: flex;
         flex-wrap: wrap;
@@ -40,7 +40,7 @@ st.markdown("""
         margin-bottom: 20px;
     }
     .ma-box {
-        flex: 1 1 100px; /* 自動伸縮 */
+        flex: 1 1 100px;
         text-align: center;
         padding: 10px;
         background-color: #f8f9fa;
@@ -54,11 +54,11 @@ st.markdown("""
     .txt-up { color: #ff4b4b; }
     .txt-down { color: #21c354; }
     
-    /* 狀態標籤 Badge */
+    /* 狀態標籤 */
     .status-badge { 
         padding: 4px 8px; 
         border-radius: 6px; 
-        font-size: 0.8rem; 
+        font-size: 0.85rem; 
         font-weight: bold; 
         color: white; 
         display: inline-block; 
@@ -179,81 +179,88 @@ if ticker_input:
                     <div class="metric-sub">{info.get('sector','N/A')}</div>
                 </div>""", unsafe_allow_html=True)
 
-            # 【區塊 B】AI 訊號卡片 (回復漂亮的卡片風格)
+            # 【區塊 B】AI 訊號卡片 (活潑口語版)
             st.markdown("#### 🤖 策略訊號解讀")
             k1, k2, k3, k4 = st.columns(4)
             
-            # 1. 趨勢
-            trend_msg = "盤整 / 觀望"
+            # 1. 趨勢 (口語化)
+            trend_msg = "💤 睡覺行情 (盤整)"
             trend_bg = "bg-gray"
+            trend_desc = "多空不明，建議觀望"
+            
             if last['Close'] > strat_fast_val > strat_slow_val:
-                trend_msg = "多頭趨勢 📈"
+                trend_msg = "🚀 火力全開！(多頭)"
                 trend_bg = "bg-red"
+                trend_desc = "均線向上，順勢操作"
             elif last['Close'] < strat_fast_val < strat_slow_val:
-                trend_msg = "空頭趨勢 📉"
+                trend_msg = "🐻 熊出沒注意 (空頭)"
                 trend_bg = "bg-green"
+                trend_desc = "均線蓋頭，保守為宜"
             
             with k1:
                 st.markdown(f"""
                 <div class="metric-card">
                     <div class="metric-title">趨勢訊號</div>
-                    <div class="metric-value">{trend_msg}</div>
+                    <div class="metric-value" style="font-size:1.3rem;">{trend_msg}</div>
                     <div><span class="status-badge {trend_bg}">MA{strat_fast} vs MA{strat_slow}</span></div>
-                    <div class="metric-sub">依據策略均線判讀</div>
+                    <div class="metric-sub">{trend_desc}</div>
                 </div>""", unsafe_allow_html=True)
             
-            # 2. 量能
+            # 2. 量能 (口語化)
             vol_r = last['Volume'] / last['Vol_MA'] if last['Vol_MA'] > 0 else 0
-            v_msg = "量縮觀望"
+            v_msg = "❄️ 冷冷清清"
             v_bg = "bg-gray"
             if vol_r > 1.5: 
-                v_msg = "爆量攻擊"
+                v_msg = "🔥 資金派對 (爆量)"
                 v_bg = "bg-red"
             elif vol_r > 1.0:
-                v_msg = "溫和放量" 
+                v_msg = "💧 人氣回溫" 
                 v_bg = "bg-blue"
             
             with k2:
                 st.markdown(f"""
                 <div class="metric-card">
-                    <div class="metric-title">量能判讀 (RVol)</div>
-                    <div class="metric-value">{v_msg}</div>
-                    <div><span class="status-badge {v_bg}">{vol_r:.1f} 倍</span></div>
-                    <div class="metric-sub">今日成交量 / 20日均量</div>
+                    <div class="metric-title">量能判讀</div>
+                    <div class="metric-value" style="font-size:1.3rem;">{v_msg}</div>
+                    <div><span class="status-badge {v_bg}">{vol_r:.1f} 倍均量</span></div>
+                    <div class="metric-sub">成交量活躍度分析</div>
                 </div>""", unsafe_allow_html=True)
 
-            # 3. MACD
-            m_msg = "多方控盤" if last['Hist'] > 0 else "空方控盤"
+            # 3. MACD (口語化)
+            m_msg = "🐂 牛軍集結" if last['Hist'] > 0 else "📉 空軍壓境"
             m_bg = "bg-red" if last['Hist'] > 0 else "bg-green"
             with k3:
                 st.markdown(f"""
                 <div class="metric-card">
                     <div class="metric-title">MACD 趨勢</div>
-                    <div class="metric-value">{m_msg}</div>
+                    <div class="metric-value" style="font-size:1.3rem;">{m_msg}</div>
                     <div><span class="status-badge {m_bg}">數值: {last['MACD']:.2f}</span></div>
-                    <div class="metric-sub">紅柱多頭 / 綠柱空頭</div>
+                    <div class="metric-sub">籌碼動能方向</div>
                 </div>""", unsafe_allow_html=True)
 
-            # 4. RSI
+            # 4. RSI (口語化)
             r_val = last['RSI']
-            r_msg = "中性區域"
+            r_msg = "⚖️ 多空拔河"
             r_bg = "bg-gray"
-            if r_val > 70: r_msg, r_bg = "過熱警戒", "bg-red"
-            elif r_val < 30: r_msg, r_bg = "超賣區", "bg-green"
+            if r_val > 70: 
+                r_msg = "🔥 太燙了！(過熱)" 
+                r_bg = "bg-red"
+            elif r_val < 30: 
+                r_msg = "🧊 跌過頭囉 (超賣)"
+                r_bg = "bg-green"
                 
             with k4:
                 st.markdown(f"""
                 <div class="metric-card">
                     <div class="metric-title">RSI 強弱</div>
-                    <div class="metric-value">{r_msg}</div>
+                    <div class="metric-value" style="font-size:1.3rem;">{r_msg}</div>
                     <div><span class="status-badge {r_bg}">數值: {r_val:.1f}</span></div>
-                    <div class="metric-sub">30-70 為合理區間</div>
+                    <div class="metric-sub">乖離率判斷</div>
                 </div>""", unsafe_allow_html=True)
 
-            # 【區塊 C】關鍵均線監控 (修復：移除縮排，避免被當成 Code Block)
+            # 【區塊 C】關鍵均線監控
             st.markdown("#### 📏 關鍵均線監控")
             
-            # 組合 HTML (注意：這裡用字串相加，不換行，確保渲染正確)
             ma_html_inner = ""
             for d in ma_list:
                 val = last[f'MA_{d}']
