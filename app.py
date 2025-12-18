@@ -44,7 +44,7 @@ st.markdown("""
 @st.cache_data(ttl=300)
 def get_stock_data(ticker):
     stock = yf.Ticker(ticker)
-    # 修改：固定抓取 1 年資料
+    # 固定抓取 1 年資料
     df = stock.history(period="1y")
     info = stock.info
     return df, info
@@ -64,7 +64,7 @@ if ticker_input:
         # 1. 抓資料
         df, info = get_stock_data(ticker_input)
         
-        if not df.empty and len(df) > 20:
+        if not df.empty and len(df) > 60:
             # 2. 計算指標
             # 計算五條均線 (5, 10, 20, 60, 120)
             df['MA_5'] = SMAIndicator(df['Close'], window=5).sma_indicator()
@@ -136,10 +136,9 @@ if ticker_input:
             st.markdown("#### 🤖 AI 趨勢解讀")
             c1, c2, c3, c4 = st.columns(4)
             
-            # 1. 均線分析 (依然使用側邊欄設定的參數來做簡單判讀，預設 5 vs 20)
+            # 1. 均線分析
             trend_msg = "盤整 / 空頭"
             trend_bg = "bg-gray"
-            # 使用自定義的短長線來判讀
             custom_short = SMAIndicator(df['Close'], window=ma_short).sma_indicator().iloc[-1]
             custom_long = SMAIndicator(df['Close'], window=ma_long).sma_indicator().iloc[-1]
             
@@ -226,12 +225,17 @@ if ticker_input:
             # 1. K線
             fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='K線'), row=1, col=1)
             
-            # 2. 五條均線
-            fig.add_trace(go.Scatter(x=df.index, y=df['MA_5'], line=dict(color='#FF9800', width=1), name='5日線 (週)'), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df.index, y=df['MA_10'], line=dict(color='#03A9F4', width=1), name='10日線 (雙週)'), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df.index, y=df['MA_20'], line=dict(color='#9C27B0', width=1.5), name='20日線 (月)'), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df.index, y=df['MA_60'], line=dict(color='#4CAF50', width=1.5), name='60日線 (季)'), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df.index, y=df['MA_120'], line=dict(color='#607D8B', width=2, dash='dot'), name='120日線 (半年)'), row=1, col=1)
+            # 2. 五條均線 (優化配色與圖例文字)
+            # MA5: 紫色 (最敏感)
+            fig.add_trace(go.Scatter(x=df.index, y=df['MA_5'], line=dict(color='#D500F9', width=1.2), name='MA5'), row=1, col=1)
+            # MA10: 藍色 (短波)
+            fig.add_trace(go.Scatter(x=df.index, y=df['MA_10'], line=dict(color='#2962FF', width=1.2), name='MA10'), row=1, col=1)
+            # MA20: 橘色 (月線支撐)
+            fig.add_trace(go.Scatter(x=df.index, y=df['MA_20'], line=dict(color='#FF6D00', width=1.5), name='MA20'), row=1, col=1)
+            # MA60: 綠色 (季線生命線)
+            fig.add_trace(go.Scatter(x=df.index, y=df['MA_60'], line=dict(color='#00C853', width=1.5), name='MA60'), row=1, col=1)
+            # MA120: 灰色虛線 (半年線趨勢)
+            fig.add_trace(go.Scatter(x=df.index, y=df['MA_120'], line=dict(color='#78909C', width=1.5, dash='dot'), name='MA120'), row=1, col=1)
 
             # 3. 成交量
             colors = ['red' if o > c else 'green' for o, c in zip(df['Open'], df['Close'])]
@@ -251,8 +255,9 @@ if ticker_input:
                 height=1000, 
                 margin=dict(l=10, r=10, t=20, b=10),
                 xaxis_rangeslider_visible=False,
-                showlegend=True, # 顯示圖例以便區分5條線
-                legend=dict(orientation="h", y=1.02, x=0, bgcolor='rgba(255,255,255,0.8)'),
+                showlegend=True, 
+                # 優化圖例位置與背景，避免遮擋
+                legend=dict(orientation="h", y=1.02, x=0, bgcolor='rgba(255,255,255,0.7)'),
                 dragmode=False
             )
             fig.update_xaxes(fixedrange=True)
