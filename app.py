@@ -139,7 +139,6 @@ st.markdown("""
     .calc-res-title { font-size: 0.8rem; color: #888; }
     .calc-res-val { font-size: 1.4rem; font-weight: bold; color: #333; }
     
-    /* 費率標籤樣式 */
     .fee-badge {
         background-color: #fff3cd;
         color: #856404;
@@ -162,7 +161,6 @@ def get_stock_data(ticker):
     df = stock.history(period="2y")
     df_intra = stock.history(period="1d", interval="5m", prepost=True)
     info = stock.info
-    # 抓取資產類型，例如 'EQUITY' 或 'ETF'
     quote_type = info.get('quoteType', 'EQUITY')
     return df, df_intra, info, quote_type
 
@@ -180,18 +178,19 @@ def get_exchange_rate():
 # --- 4. 側邊欄 ---
 with st.sidebar:
     st.header("⚙️ 參數設定")
-    ticker_input = st.text_input("股票代號", "TSLA").upper()
+    # 給輸入框一個 key，避免重整時消失
+    ticker_input = st.text_input("股票代號", "TSLA", key="sidebar_ticker").upper()
     st.markdown("---")
     
     st.subheader("🧠 策略邏輯")
-    strategy_mode = st.radio("判讀模式", ["🤖 自動判別 (Auto)", "🛠️ 手動設定 (Manual)"])
+    strategy_mode = st.radio("判讀模式", ["🤖 自動判別 (Auto)", "🛠️ 手動設定 (Manual)"], key="sidebar_strat_mode")
     
     strat_fast, strat_slow = 5, 20
     strat_desc = "預設"
 
     if strategy_mode == "🛠️ 手動設定 (Manual)":
-        strat_fast = st.number_input("策略快線 (Fast)", value=5)
-        strat_slow = st.number_input("策略慢線 (Slow)", value=20)
+        strat_fast = st.number_input("策略快線 (Fast)", value=5, key="sidebar_fast")
+        strat_slow = st.number_input("策略慢線 (Slow)", value=20, key="sidebar_slow")
         strat_desc = "自訂策略"
 
 # --- 5. 主程式 ---
@@ -234,7 +233,7 @@ if ticker_input:
             tab_analysis, tab_calc, tab_inv = st.tabs(["📊 技術分析", "🧮 交易計算", "📦 庫存管理"])
 
             # ==========================================
-            # 分頁 1: 技術分析 (內容不變)
+            # 分頁 1: 技術分析 (維持不變)
             # ==========================================
             with tab_analysis:
                 if not df_intra.empty:
@@ -471,31 +470,24 @@ if ticker_input:
                 st.markdown(f"""<div class="ai-summary-card"><div class="ai-title">🤖 AI 綜合判讀報告</div><div class="ai-content">{ai_suggestion}<br><br><b>關鍵數據摘要：</b><br>• 趨勢：{trend_status}<br>• 量能：{vol_status} ({vol_r:.1f}倍)<br>• 籌碼 (MACD)：{macd_status}<br>• 強弱 (RSI)：{r_val:.1f} ({rsi_status})</div></div>""", unsafe_allow_html=True)
 
             # ==========================================
-            # 分頁 2: 交易規劃計算機 (修正跳頁問題版)
+            # 分頁 2: 交易規劃計算機 (狀態鎖定版)
             # ==========================================
             with tab_calc:
                 st.markdown("#### 🧮 交易前規劃")
                 
-                # --- 自動判斷費率 ---
-                SEC_FEE_RATE = 0.0000278 # SEC 規費 (固定)
+                SEC_FEE_RATE = 0.0000278
                 
                 if quote_type == 'ETF':
-                    # ETF 規則: 買賣各 3 美金
                     BUY_FIXED_FEE = 3.0
                     BUY_RATE_FEE = 0.0
-                    
                     SELL_FIXED_FEE = 3.0
-                    SELL_RATE_FEE = SEC_FEE_RATE # 只收 SEC，沒有 Broker %
-                    
+                    SELL_RATE_FEE = SEC_FEE_RATE
                     fee_badge_text = "💡 檢測為 **ETF**：套用固定手續費 **$3 USD**"
                 else:
-                    # 股票 規則: 0.1% (無最低)
                     BUY_FIXED_FEE = 0.0
-                    BUY_RATE_FEE = 0.001 # 0.1%
-                    
+                    BUY_RATE_FEE = 0.001
                     SELL_FIXED_FEE = 0.0
-                    SELL_RATE_FEE = 0.001 + SEC_FEE_RATE # 0.1% + SEC
-                    
+                    SELL_RATE_FEE = 0.001 + SEC_FEE_RATE
                     fee_badge_text = "💡 檢測為 **一般股票**：套用費率 **0.1%**"
 
                 st.markdown(f'<div class="fee-badge">{fee_badge_text}</div>', unsafe_allow_html=True)
@@ -507,10 +499,15 @@ if ticker_input:
                     
                     bc1, bc2 = st.columns(2)
                     with bc1:
-                        # 加入 key 防止刷新
+                        # 簡單的數值，不需要 session_state
                         budget_twd = st.number_input("台幣預算 (TWD)", value=100000, step=1000, key="budget_input")
                     with bc2:
-                        buy_price_input = st.number_input("預計買入價 (USD)", value=float(current_close_price), step=0.1, format="%.2f", key="buy_price_input")
+                        # [關鍵修改] 使用 session_state 鎖定預設值
+                        # 只有當 'buy_price_input' 還不存在 session_state 時，才把股價寫進去
+                        if "buy_price_input" not in st.session_state:
+                            st.session_state.buy_price_input = float(current_close_price)
+                        
+                        buy_price_input = st.number_input("預計買入價 (USD)", key="buy_price_input", step=0.1, format="%.2f")
 
                     usd_budget = budget_twd / exchange_rate
                     
@@ -543,11 +540,13 @@ if ticker_input:
                     
                     c_input1, c_input2 = st.columns(2)
                     with c_input1:
-                        # 加入 key
                         shares_held = st.number_input("持有股數", value=10.0, step=1.0, key="hold_shares_input")
                     with c_input2:
-                        # 加入 key
-                        cost_price = st.number_input("買入成本 (USD)", value=buy_price_input, step=0.1, format="%.2f", key="cost_price_input")
+                        # [關鍵修改] 使用 session_state 鎖定預設值
+                        if "cost_price_input" not in st.session_state:
+                            st.session_state.cost_price_input = float(current_close_price)
+                        
+                        cost_price = st.number_input("買入成本 (USD)", key="cost_price_input", step=0.1, format="%.2f")
 
                     real_buy_cost_usd = (cost_price * shares_held * (1 + BUY_RATE_FEE)) + BUY_FIXED_FEE
                     
@@ -557,20 +556,19 @@ if ticker_input:
 
                     st.divider()
 
-                    # 雙向模式切換 - 這裡是最關鍵的 key！
+                    # 這裡 Key 已經存在，狀態安全
                     calc_mode = st.radio("選擇試算目標：", 
                                        ["🎯 設定【目標獲利】反推股價", "💵 設定【賣出價格】計算獲利"], 
                                        horizontal=True,
-                                       key="calc_mode_radio")  # <--- 加入了唯一的 key
+                                       key="calc_mode_radio")
 
                     if calc_mode == "🎯 設定【目標獲利】反推股價":
-                        # 加入 key
                         target_profit_twd = st.number_input("我想賺多少台幣 (TWD)?", value=3000, step=500, key="target_profit_input")
                         target_profit_usd = target_profit_twd / exchange_rate
                         
                         target_sell_price = (target_profit_usd + real_buy_cost_usd + SELL_FIXED_FEE) / (shares_held * (1 - SELL_RATE_FEE))
                         
-                        pct_need = ((target_sell_price / cost_price) - 1) * 100
+                        pct_need = ((target_sell_price / cost_price) - 1) * 100 if cost_price > 0 else 0
                         
                         st.markdown(f"""
                         <div class="calc-result">
@@ -581,8 +579,11 @@ if ticker_input:
                         """, unsafe_allow_html=True)
 
                     else:
-                        # 加入 key
-                        target_sell_input = st.number_input("預計賣出價格 (USD)", value=float(cost_price)*1.05, step=0.1, format="%.2f", key="target_sell_input")
+                        # [關鍵修改] 預設賣價也鎖定，避免跳動
+                        if "target_sell_input" not in st.session_state:
+                            st.session_state.target_sell_input = float(cost_price) * 1.05
+
+                        target_sell_input = st.number_input("預計賣出價格 (USD)", key="target_sell_input", step=0.1, format="%.2f")
                         
                         net_revenue_usd = (target_sell_input * shares_held * (1 - SELL_RATE_FEE)) - SELL_FIXED_FEE
                         
@@ -603,49 +604,43 @@ if ticker_input:
                         """, unsafe_allow_html=True)
 
             # ==========================================
-            # 分頁 3: 庫存管理 (同樣套用新費率邏輯)
+            # 分頁 3: 庫存管理 (同樣套用狀態鎖定)
             # ==========================================
             with tab_inv:
                 st.markdown("#### 📦 庫存損益與加碼攤平")
-                
-                # 再次顯示費率提示
                 st.caption(f"{fee_badge_text}")
 
                 with st.container():
                     ic1, ic2 = st.columns(2)
                     with ic1:
                         st.caption("📍 目前持倉")
-                        curr_shares = st.number_input("目前股數", value=100.0)
-                        # 這裡假設使用者輸入的是「平均買入價格」，而不是「已含手續費的成本」
-                        # 為了簡化，我們通常用平均成交價來算
-                        curr_avg_price = st.number_input("平均成交價 (USD)", value=float(current_close_price)*1.1)
+                        curr_shares = st.number_input("目前股數", value=100.0, key="inv_curr_shares")
+                        
+                        # [關鍵修改] 鎖定
+                        if "inv_curr_avg" not in st.session_state:
+                            st.session_state.inv_curr_avg = float(current_close_price) * 1.1
+                        curr_avg_price = st.number_input("平均成交價 (USD)", key="inv_curr_avg", step=0.1, format="%.2f")
+
                     with ic2:
                         st.caption("➕ 預計加碼")
-                        new_shares = st.number_input("加碼股數", value=50.0)
-                        new_buy_price = st.number_input("加碼單價 (USD)", value=float(current_close_price))
+                        new_shares = st.number_input("加碼股數", value=50.0, key="inv_new_shares")
+                        
+                        # [關鍵修改] 鎖定
+                        if "inv_new_price" not in st.session_state:
+                            st.session_state.inv_new_price = float(current_close_price)
+                        new_buy_price = st.number_input("加碼單價 (USD)", key="inv_new_price", step=0.1, format="%.2f")
                 
                 st.markdown("---")
 
-                # 計算邏輯 (使用「成交價」加權平均)
                 total_shares = curr_shares + new_shares
-                
-                # 舊倉總值 (原始本金)
                 cost_old = curr_shares * curr_avg_price
-                # 新倉總值
                 cost_new = new_shares * new_buy_price
+                new_avg_price = (cost_old + cost_new) / total_shares if total_shares > 0 else 0
                 
-                new_avg_price = (cost_old + cost_new) / total_shares
-                
-                # 預估損益 (包含手續費)
-                # 總投入成本 (含買入手續費)
-                # Old Cost w/ Fee
                 cost_old_w_fee = (curr_shares * curr_avg_price * (1 + BUY_RATE_FEE)) + (BUY_FIXED_FEE if curr_shares > 0 else 0)
-                # New Cost w/ Fee
                 cost_new_w_fee = (new_shares * new_buy_price * (1 + BUY_RATE_FEE)) + (BUY_FIXED_FEE if new_shares > 0 else 0)
-                
                 total_invested_real = cost_old_w_fee + cost_new_w_fee
 
-                # 假設現在全部賣掉的淨值 (以加碼價 new_buy_price 估算市值)
                 market_val_gross = total_shares * new_buy_price
                 market_val_net = (market_val_gross * (1 - SELL_RATE_FEE)) - (SELL_FIXED_FEE if total_shares > 0 else 0)
                 
