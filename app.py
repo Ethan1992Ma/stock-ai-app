@@ -5,8 +5,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from ta.trend import SMAIndicator, MACD
 from ta.momentum import RSIIndicator
-from datetime import datetime, time
-import pytz
+from datetime import time
 
 # --- 1. 網頁設定 ---
 st.set_page_config(page_title="AI 智能操盤戰情室", layout="wide", initial_sidebar_state="collapsed")
@@ -29,29 +28,28 @@ st.markdown("""
     .metric-value { font-size: 1.8rem; font-weight: 800; color: #212529; }
     .metric-sub { font-size: 0.9rem; color: #888; margin-top: 5px; }
     
-    /* 盤後價格專用樣式 */
     .ext-price-box {
         background-color: #f1f3f5;
-        padding: 5px 10px;
-        border-radius: 8px;
-        font-size: 0.9rem;
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-size: 0.85rem;
         font-weight: 600;
-        color: #495057;
+        color: #666;
         margin-top: 8px;
         display: inline-block;
     }
-    .ext-label { font-size: 0.75rem; color: #868e96; margin-right: 5px; }
+    .ext-label { font-size: 0.75rem; color: #999; margin-right: 5px; }
 
-    /* 走勢圖右側刻度 */
     .spark-scale {
         position: absolute;
         right: 15px;
-        top: 50%;
+        top: 55%; /* 微調位置 */
         transform: translateY(-50%);
         text-align: right;
         font-size: 0.7rem;
         color: #adb5bd;
-        line-height: 1.2;
+        line-height: 1.4;
+        font-weight: 600;
     }
 
     .ai-summary-card {
@@ -109,11 +107,11 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 3. 數據處理 ---
-@st.cache_data(ttl=60) # 盤中數據更新頻率設快一點 (1分鐘)
+@st.cache_data(ttl=60)
 def get_stock_data(ticker):
     stock = yf.Ticker(ticker)
     df = stock.history(period="2y")
-    # 關鍵：prepost=True 抓取盤前盤後數據
+    # 抓取盤前盤後
     df_intra = stock.history(period="1d", interval="5m", prepost=True)
     info = stock.info
     return df, df_intra, info
@@ -165,39 +163,29 @@ if ticker_input:
             df['Hist'] = macd.macd_diff()
             df['Vol_MA'] = SMAIndicator(df['Volume'], window=20).sma_indicator()
 
-            # --- 價格顯示邏輯 (正規 vs 盤前盤後) ---
-            
-            # 1. 取得最新一筆交易資料 (可能是盤後)
+            # --- 價格顯示邏輯 ---
             live_price = df_intra['Close'].iloc[-1] if not df_intra.empty else 0
-            live_prev = df_intra['Close'].iloc[0] if not df_intra.empty else 0 # 當日第一筆作為參考
-            
-            # 2. 取得正規市場收盤價 (Regular Market Price)
-            # yfinance info 有時候會有延遲，我們優先用 info，若無則用 history 的最後一筆日線
             regular_price = info.get('currentPrice', info.get('regularMarketPrice', df['Close'].iloc[-1]))
             previous_close = info.get('previousClose', df['Close'].iloc[-2])
             
-            # 3. 判斷顯示模式
-            # 如果現在即時價格 跟 正規價格 差距過大 (例如 > 0.5%)，或者明確知道是盤前盤後
-            # 這裡用簡單邏輯：如果有 info 資料，比較 currentPrice (即時) 和 regularMarketPrice (收盤)
-            
-            is_extended_hours = False
+            # 判斷盤前盤後
+            is_extended = False
             ext_price = 0
             ext_pct = 0
             
-            # 嘗試取得盤前盤後價格
             if 'preMarketPrice' in info and info['preMarketPrice'] is not None:
                 ext_price = info['preMarketPrice']
-                is_extended_hours = True
+                is_extended = True
                 ext_label = "盤前"
             elif 'postMarketPrice' in info and info['postMarketPrice'] is not None:
                 ext_price = info['postMarketPrice']
-                is_extended_hours = True
+                is_extended = True
                 ext_label = "盤後"
             
-            # 如果 API 沒給明確盤前盤後，但 df_intra 最新價跟收盤價差很多，也視為盤後波動
-            if not is_extended_hours and abs(live_price - regular_price) / regular_price > 0.001:
+            # 若無明確API欄位但價格差異大，視為盤後
+            if not is_extended and abs(live_price - regular_price) / regular_price > 0.001:
                  ext_price = live_price
-                 is_extended_hours = True
+                 is_extended = True
                  ext_label = "盤後/試撮"
 
             # 計算漲跌幅
@@ -205,48 +193,84 @@ if ticker_input:
             reg_pct = (reg_change / previous_close) * 100
             reg_color = "#ff4b4b" if reg_change > 0 else "#21c354"
 
-            if is_extended_hours:
+            if is_extended:
                 ext_change = ext_price - regular_price
                 ext_pct = (ext_change / regular_price) * 100
                 ext_color = "#ff4b4b" if ext_change > 0 else "#21c354"
 
-            
             # --- 版面顯示 ---
             st.markdown(f"### 📱 {info.get('longName', ticker_input)} ({ticker_input})")
             st.caption(f"目前策略：{strat_desc}")
 
-            # 【區塊 A】價格核心 (雙模式)
+            # 【區塊 A】基本面與價格 (盤前盤後虛線版)
             c1, c2, c3, c4 = st.columns(4)
             with c1:
-                # 準備走勢圖
                 fig_spark = go.Figure()
+                
                 if not df_intra.empty:
-                    day_open = df_intra['Open'].iloc[0]
-                    day_close = df_intra['Close'].iloc[-1]
+                    # 處理時區與正規交易時間
+                    # 確保索引是 datetime
+                    df_intra.index = pd.to_datetime(df_intra.index)
+                    
+                    if ".TW" in ticker_input:
+                        tz = 'Asia/Taipei'
+                        open_time = time(9, 0)
+                        close_time = time(13, 30)
+                    else:
+                        tz = 'America/New_York'
+                        open_time = time(9, 30)
+                        close_time = time(16, 0)
+                    
+                    # 轉換時區以利篩選
+                    try:
+                        df_intra_tz = df_intra.tz_convert(tz)
+                    except:
+                        # 若無時區資訊，假設已經是該地時間 (台股通常無 tz)
+                        df_intra_tz = df_intra
+
+                    # 分離正規時間與盤前盤後
+                    # 1. 畫底圖 (全天候，灰色虛線)
                     day_high = df_intra['High'].max()
                     day_low = df_intra['Low'].min()
                     
                     # 計算今日相對開盤的最高/最低漲跌幅 (當作座標)
                     day_high_pct = ((day_high - previous_close) / previous_close) * 100
                     day_low_pct = ((day_low - previous_close) / previous_close) * 100
-                    
-                    spark_color = '#ff4b4b' if day_close >= day_open else '#21c354'
-                    fill_color = f"rgba({255 if day_close>=day_open else 33}, {75 if day_close>=day_open else 195}, {75 if day_close>=day_open else 84}, 0.1)"
-                    
+
+                    # Trace 1: 灰色虛線 (代表盤前盤後或背景)
                     fig_spark.add_trace(go.Scatter(
                         x=df_intra.index, y=df_intra['Close'],
                         mode='lines',
-                        line=dict(color=spark_color, width=2),
-                        fill='tozeroy', fillcolor=fill_color
+                        line=dict(color='#bdc3c7', width=1.5, dash='dot'), # 灰色虛線
+                        hoverinfo='skip'
                     ))
+
+                    # Trace 2: 正規時間實線 (紅/綠)
+                    # 篩選正規時間內的數據
+                    mask = (df_intra_tz.index.time >= open_time) & (df_intra_tz.index.time <= close_time)
+                    df_regular = df_intra[mask]
                     
-                    # 鎖定 X 軸 (完整交易時段)
-                    market_open_time = df_intra.index[0]
-                    if ".TW" in ticker_input:
-                        market_close_time = market_open_time + pd.Timedelta(hours=4, minutes=30)
-                    else:
-                        market_close_time = market_open_time + pd.Timedelta(hours=10) # 包含盤前盤後拉長一點
-                    
+                    if not df_regular.empty:
+                        day_open_reg = df_regular['Open'].iloc[0]
+                        day_close_reg = df_regular['Close'].iloc[-1]
+                        spark_color = '#ff4b4b' if day_close_reg >= day_open_reg else '#21c354'
+                        fill_color = f"rgba({255 if day_close_reg>=day_open_reg else 33}, {75 if day_close_reg>=day_open_reg else 195}, {75 if day_close_reg>=day_open_reg else 84}, 0.15)"
+                        
+                        fig_spark.add_trace(go.Scatter(
+                            x=df_regular.index, y=df_regular['Close'],
+                            mode='lines',
+                            line=dict(color=spark_color, width=2), # 實線
+                            fill='tozeroy', 
+                            fillcolor=fill_color
+                        ))
+
+                    # 鎖定 X 軸範圍 (包含盤前盤後一點點緩衝)
+                    x_start = df_intra.index[0]
+                    # 如果是美股，強制拉長 X 軸到 16:00 之後一點點，讓盤中看起來是進行式
+                    if ".TW" not in ticker_input:
+                         # 簡單處理：取當天開盤日期的 04:00 到 20:00 (涵蓋美股全時段)
+                         pass # 自動縮放就好，因為底圖有全天數據
+
                     # 動態 Y 軸
                     y_min = day_low * 0.999
                     y_max = day_high * 1.001
@@ -254,7 +278,7 @@ if ticker_input:
                     fig_spark.update_layout(
                         height=80,
                         margin=dict(l=0, r=40, t=5, b=5), # 右邊留白給刻度
-                        xaxis=dict(visible=False, range=[market_open_time, market_close_time]),
+                        xaxis=dict(visible=False),
                         yaxis=dict(visible=False, range=[y_min, y_max]),
                         paper_bgcolor='rgba(0,0,0,0)',
                         plot_bgcolor='rgba(0,0,0,0)',
@@ -262,8 +286,7 @@ if ticker_input:
                         dragmode=False
                     )
                     
-                    # 構建 HTML
-                    # 1. 主價格 (收盤價/正規價)
+                    # 組合 HTML
                     price_html = f"""
                     <div class="metric-card">
                         <div class="metric-title">最新股價</div>
@@ -273,8 +296,7 @@ if ticker_input:
                         </div>
                     """
                     
-                    # 2. 盤前/盤後價格 (如果有)
-                    if is_extended_hours:
+                    if is_extended:
                         price_html += f"""
                         <div class="ext-price-box">
                             <span class="ext-label">{ext_label}</span> 
@@ -282,7 +304,6 @@ if ticker_input:
                         </div>
                         """
                     
-                    # 3. 走勢圖右側刻度 (座標)
                     scale_html = f"""
                     <div class="spark-scale">
                         <div style="color:#ff4b4b">H: {day_high_pct:+.1f}%</div>
@@ -290,12 +311,12 @@ if ticker_input:
                     </div>
                     """
                     
-                    price_html += f"{scale_html}</div>" # Close card div
+                    price_html += f"{scale_html}</div>"
                     
                     st.markdown(price_html, unsafe_allow_html=True)
                     st.plotly_chart(fig_spark, use_container_width=True, config={'displayModeBar': False})
                 else:
-                    st.info("無即時數據")
+                    st.info("暫無即時數據")
 
             with c2:
                 pe = info.get('trailingPE', 'N/A')
@@ -336,14 +357,12 @@ if ticker_input:
             trend_msg = "💤 睡覺行情 (盤整)"
             trend_bg = "bg-gray"
             trend_desc = "多空不明，建議觀望"
-            # 使用最後一筆日線數據判讀
-            last_close = df['Close'].iloc[-1]
-            if last_close > strat_fast_val > strat_slow_val:
+            if last['Close'] > strat_fast_val > strat_slow_val:
                 trend_msg = "🚀 火力全開！(多頭)"
                 trend_bg = "bg-red"
                 trend_desc = "均線向上，順勢操作"
                 trend_status = "多頭"
-            elif last_close < strat_fast_val < strat_slow_val:
+            elif last['Close'] < strat_fast_val < strat_slow_val:
                 trend_msg = "🐻 熊出沒注意 (空頭)"
                 trend_bg = "bg-green"
                 trend_desc = "均線蓋頭，保守為宜"
@@ -359,7 +378,7 @@ if ticker_input:
                 </div>""", unsafe_allow_html=True)
             
             # 2. 量能
-            vol_r = df['Volume'].iloc[-1] / df['Vol_MA'].iloc[-1] if df['Vol_MA'].iloc[-1] > 0 else 0
+            vol_r = last['Volume'] / last['Vol_MA'] if last['Vol_MA'] > 0 else 0
             v_msg = "❄️ 冷冷清清"
             v_bg = "bg-gray"
             if vol_r > 1.5: 
@@ -381,20 +400,20 @@ if ticker_input:
                 </div>""", unsafe_allow_html=True)
 
             # 3. MACD
-            m_msg = "🐂 牛軍集結" if df['Hist'].iloc[-1] > 0 else "📉 空軍壓境"
-            m_bg = "bg-red" if df['Hist'].iloc[-1] > 0 else "bg-green"
-            macd_status = "多方" if df['Hist'].iloc[-1] > 0 else "空方"
+            m_msg = "🐂 牛軍集結" if last['Hist'] > 0 else "📉 空軍壓境"
+            m_bg = "bg-red" if last['Hist'] > 0 else "bg-green"
+            macd_status = "多方" if last['Hist'] > 0 else "空方"
             with k3:
                 st.markdown(f"""
                 <div class="metric-card">
                     <div class="metric-title">MACD 趨勢</div>
                     <div class="metric-value" style="font-size:1.3rem;">{m_msg}</div>
-                    <div><span class="status-badge {m_bg}">數值: {df['MACD'].iloc[-1]:.2f}</span></div>
+                    <div><span class="status-badge {m_bg}">數值: {last['MACD']:.2f}</span></div>
                     <div class="metric-sub">籌碼動能方向</div>
                 </div>""", unsafe_allow_html=True)
 
             # 4. RSI
-            r_val = df['RSI'].iloc[-1]
+            r_val = last['RSI']
             r_msg = "⚖️ 多空拔河"
             r_bg = "bg-gray"
             if r_val > 70: 
@@ -418,11 +437,9 @@ if ticker_input:
             # 【區塊 C】關鍵均線監控
             st.markdown("#### 📏 關鍵均線監控")
             ma_html_inner = ""
-            last_row = df.iloc[-1]
-            prev_row = df.iloc[-2]
             for d in ma_list:
-                val = last_row[f'MA_{d}']
-                prev_val = prev_row[f'MA_{d}']
+                val = last[f'MA_{d}']
+                prev_val = prev[f'MA_{d}']
                 arrow = "▲" if val > prev_val else "▼"
                 cls = "txt-up" if val > prev_val else "txt-down"
                 ma_html_inner += f'<div class="ma-box"><div class="ma-label">MA {d}</div><div class="ma-val {cls}">{val:.2f} {arrow}</div></div>'
@@ -431,13 +448,7 @@ if ticker_input:
             # 【區塊 D】圖表
             st.markdown("#### 📉 技術分析 (1年日線)")
             df_chart = df.tail(250) 
-            fig = make_subplots(
-                rows=4, cols=1, 
-                shared_xaxes=True, 
-                vertical_spacing=0.03, 
-                row_heights=[0.5, 0.15, 0.15, 0.2],
-                subplot_titles=("", "", "", "")
-            )
+            fig = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.5, 0.15, 0.15, 0.2], subplot_titles=("", "", "", ""))
             fig.add_trace(go.Candlestick(x=df_chart.index, open=df_chart['Open'], high=df_chart['High'], low=df_chart['Low'], close=df_chart['Close'], name='K線', showlegend=False), row=1, col=1)
             fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_5'], line=dict(color='#D500F9', width=1), name='MA5 (紫)', showlegend=True), row=1, col=1)
             fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_20'], line=dict(color='#FF6D00', width=1.5), name='MA20 (橘)', showlegend=True), row=1, col=1)
