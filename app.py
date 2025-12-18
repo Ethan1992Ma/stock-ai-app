@@ -154,9 +154,8 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. 數據處理 ---
-@st.cache_data(ttl=60)
-def get_stock_data(ticker):
+# --- 3. 數據抓取函數 (不快取，改用 Session State 控制) ---
+def fetch_stock_data_now(ticker):
     stock = yf.Ticker(ticker)
     df = stock.history(period="2y")
     df_intra = stock.history(period="1d", interval="5m", prepost=True)
@@ -164,8 +163,7 @@ def get_stock_data(ticker):
     quote_type = info.get('quoteType', 'EQUITY')
     return df, df_intra, info, quote_type
 
-@st.cache_data(ttl=3600)
-def get_exchange_rate():
+def fetch_exchange_rate_now():
     try:
         fx = yf.Ticker("USDTWD=X")
         hist = fx.history(period="1d")
@@ -178,8 +176,14 @@ def get_exchange_rate():
 # --- 4. 側邊欄 ---
 with st.sidebar:
     st.header("⚙️ 參數設定")
-    # 給輸入框一個 key，避免重整時消失
     ticker_input = st.text_input("股票代號", "TSLA", key="sidebar_ticker").upper()
+    
+    # 增加手動更新按鈕
+    if st.button("🔄 更新報價 (Refresh)"):
+        # 清除資料，強制重抓
+        if 'stored_ticker' in st.session_state:
+            del st.session_state['stored_ticker']
+
     st.markdown("---")
     
     st.subheader("🧠 策略邏輯")
@@ -193,12 +197,38 @@ with st.sidebar:
         strat_slow = st.number_input("策略慢線 (Slow)", value=20, key="sidebar_slow")
         strat_desc = "自訂策略"
 
-# --- 5. 主程式 ---
+# --- 5. 主程式: 數據鎖定邏輯 ---
 if ticker_input:
     try:
-        df, df_intra, info, quote_type = get_stock_data(ticker_input)
-        exchange_rate = get_exchange_rate()
-        
+        # [關鍵修改] 檢查 Session State 是否已有該股票的資料
+        # 如果是新股票代號，或者資料還沒抓過，才去執行 yfinance
+        if 'stored_ticker' not in st.session_state or st.session_state.stored_ticker != ticker_input:
+            
+            with st.spinner(f"正在抓取 {ticker_input} 數據..."):
+                df, df_intra, info, quote_type = fetch_stock_data_now(ticker_input)
+                exchange_rate = fetch_exchange_rate_now()
+                
+                # 存入 Session State (鎖定數據)
+                st.session_state.stored_ticker = ticker_input
+                st.session_state.data_df = df
+                st.session_state.data_df_intra = df_intra
+                st.session_state.data_info = info
+                st.session_state.data_quote_type = quote_type
+                st.session_state.data_exchange_rate = exchange_rate
+                
+                # 清除舊的計算機輸入暫存，確保切換股票時數值重置
+                keys_to_clear = ["buy_price_input", "cost_price_input", "target_sell_input", "inv_curr_avg", "inv_new_price"]
+                for k in keys_to_clear:
+                    if k in st.session_state:
+                        del st.session_state[k]
+
+        # [關鍵修改] 直接從 Session State 讀取資料 (速度極快，不會造成跳頁)
+        df = st.session_state.data_df
+        df_intra = st.session_state.data_df_intra
+        info = st.session_state.data_info
+        quote_type = st.session_state.data_quote_type
+        exchange_rate = st.session_state.data_exchange_rate
+
         if not df.empty and len(df) > 200:
             
             # --- A. 指標計算 ---
