@@ -14,6 +14,16 @@ st.markdown("""
     <style>
     .stApp { background-color: #f8f9fa; }
     
+    /* 調整標題與圖表的間距 */
+    .chart-title {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #333;
+        margin-top: 10px;
+        margin-bottom: 0px; /* 標題與圖表靠緊一點，讓卡片感更好 */
+        padding-left: 5px;
+    }
+
     .metric-card {
         background-color: #ffffff;
         padding: 20px;
@@ -282,6 +292,7 @@ if ticker_input:
             vol_status = "一般"
             macd_status = "不明"
 
+            # 訊號判讀
             trend_msg = "💤 睡覺行情 (盤整)"
             trend_bg = "bg-gray"
             trend_desc = "多空不明，建議觀望"
@@ -344,57 +355,51 @@ if ticker_input:
                 ma_html_inner += f'<div class="ma-box"><div class="ma-label">MA {d}</div><div class="ma-val {cls}">{val:.2f} {arrow}</div></div>'
             st.markdown(f'<div class="ma-container">{ma_html_inner}</div>', unsafe_allow_html=True)
 
-            # 【區塊 D】圖表
+            # 【區塊 D】圖表 (標題外部化 + 圖例下移)
             st.markdown("#### 📉 技術分析")
-            
             df_chart = df.tail(250) 
             
-            # 主圖 (圖例移到下方)
+            # 1. 價格
+            st.markdown("<div class='chart-title'>📈 股價走勢 & 均線 (1年)</div>", unsafe_allow_html=True)
             fig_price = go.Figure()
             fig_price.add_trace(go.Candlestick(x=df_chart.index, open=df_chart['Open'], high=df_chart['High'], low=df_chart['Low'], close=df_chart['Close'], name='K線', showlegend=False))
             fig_price.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_5'], line=dict(color='#D500F9', width=1), name='MA5', showlegend=True))
             fig_price.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_20'], line=dict(color='#FF6D00', width=1.5), name='MA20', showlegend=True))
             fig_price.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_60'], line=dict(color='#00C853', width=1.5), name='MA60', showlegend=True))
             fig_price.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_120'], line=dict(color='#78909C', width=1.5, dash='dot'), name='MA120', showlegend=True))
-            
-            # 關鍵修改：legend 移到下方 (y < 0)
             fig_price.update_layout(
-                title="📈 股價走勢 & 均線 (1年)",
-                height=400,
-                margin=dict(l=10, r=10, t=40, b=50), # 底部留多一點白
-                paper_bgcolor='white',
-                plot_bgcolor='white',
-                xaxis_rangeslider_visible=False,
-                dragmode=False,
-                legend=dict(
-                    orientation="h",
-                    yanchor="top",
-                    y=-0.2, # 移到 X 軸下方
-                    xanchor="center",
-                    x=0.5
-                )
+                height=400, 
+                margin=dict(l=10, r=10, t=10, b=100), # 上留白小，下留白給圖例
+                paper_bgcolor='white', plot_bgcolor='white', 
+                xaxis_rangeslider_visible=False, dragmode=False, 
+                legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5) # 圖例徹底移到下方
             )
             st.plotly_chart(fig_price, use_container_width=True, config={'displayModeBar': False})
 
-            # 其他圖表 (維持原樣)
+            # 2. 成交量
+            st.markdown("<div class='chart-title'>📊 成交量</div>", unsafe_allow_html=True)
             fig_vol = go.Figure()
             colors = ['red' if o > c else 'green' for o, c in zip(df_chart['Open'], df_chart['Close'])]
             fig_vol.add_trace(go.Bar(x=df_chart.index, y=df_chart['Volume'], marker_color=colors, name='Volume'))
-            fig_vol.update_layout(title="📊 成交量", height=250, margin=dict(l=10, r=10, t=40, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False)
+            fig_vol.update_layout(height=250, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False)
             st.plotly_chart(fig_vol, use_container_width=True, config={'displayModeBar': False})
 
+            # 3. RSI
+            st.markdown("<div class='chart-title'>⚡ RSI 相對強弱指標</div>", unsafe_allow_html=True)
             fig_rsi = go.Figure()
             fig_rsi.add_trace(go.Scatter(x=df_chart.index, y=df_chart['RSI'], line=dict(color='#9C27B0', width=2), name='RSI'))
             fig_rsi.add_hline(y=70, line_dash="dash", line_color="red")
             fig_rsi.add_hline(y=30, line_dash="dash", line_color="green")
-            fig_rsi.update_layout(title="⚡ RSI 相對強弱指標", height=250, margin=dict(l=10, r=10, t=40, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False)
+            fig_rsi.update_layout(height=250, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False)
             st.plotly_chart(fig_rsi, use_container_width=True, config={'displayModeBar': False})
 
+            # 4. MACD
+            st.markdown("<div class='chart-title'>🌊 MACD 趨勢指標</div>", unsafe_allow_html=True)
             fig_macd = go.Figure()
             fig_macd.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MACD'], line=dict(color='#2196F3', width=1), name='MACD'))
             fig_macd.add_trace(go.Scatter(x=df_chart.index, y=df_chart['Signal'], line=dict(color='#FF5722', width=1), name='Signal'))
             fig_macd.add_trace(go.Bar(x=df_chart.index, y=df_chart['Hist'], marker_color=['red' if h < 0 else 'green' for h in df_chart['Hist']], name='Hist'))
-            fig_macd.update_layout(title="🌊 MACD 趨勢指標", height=250, margin=dict(l=10, r=10, t=40, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False)
+            fig_macd.update_layout(height=250, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False)
             st.plotly_chart(fig_macd, use_container_width=True, config={'displayModeBar': False})
 
             # 【區塊 E】AI 綜合判讀
