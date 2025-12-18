@@ -7,24 +7,24 @@ from ta.momentum import RSIIndicator
 from datetime import time
 
 # --- 1. 網頁設定 ---
-st.set_page_config(page_title="AI 智能操盤戰情室 (美股版)", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="AI 智能操盤戰情室 (VIP配色版)", layout="wide", initial_sidebar_state="collapsed")
 
-# --- 定義全域配色常數 (美股風格：綠漲紅跌) ---
-COLOR_UP = "#248888"      # 上漲/獲利/多頭 (綠)
-COLOR_DOWN = "#E7475E"    # 下跌/虧損/空頭 (紅)
-COLOR_NEUTRAL = "#adb5bd" # 中性
+# --- 定義全域配色常數 (用戶客製化) ---
+COLOR_UP = "#059a81"      # 上漲 (松石綠)
+COLOR_DOWN = "#f23645"    # 下跌 (法拉利紅)
+COLOR_NEUTRAL = "#adb5bd" # 中性灰
 
-# MACD 客製化配色
-MACD_BULL_GROW = "#2db09c" # 深綠
+# MACD 保持你原本指定的四色分級 (這組跟新的紅綠也很搭)
+MACD_BULL_GROW = "#2db09c"   # 深綠
 MACD_BULL_SHRINK = "#a8e0d1" # 淺綠
-MACD_BEAR_GROW = "#ff6666" # 深紅
+MACD_BEAR_GROW = "#ff6666"   # 深紅
 MACD_BEAR_SHRINK = "#ffcccc" # 淺紅
 
-# 成交量客製化配色
-VOL_EXPLODE = "#FF8A80" # 爆量
-VOL_NORMAL = "#FFD180"  # 正常
-VOL_SHRINK = "#FFFF8D"  # 量縮
-VOL_MA_LINE = "#CFD8DC" # 均量線
+# 成交量客製化 (暖色系分級)
+VOL_EXPLODE = "#C70039" # 爆量 (深紅)
+VOL_NORMAL = "#FF5733"  # 正常 (鮮橘)
+VOL_SHRINK = "#FFC300"  # 量縮 (金黃)
+VOL_MA_LINE = "#000000" # 均量線 (純黑)
 
 # --- 2. CSS 美化 ---
 st.markdown(f"""
@@ -125,7 +125,7 @@ st.markdown(f"""
         margin-top: 8px;
     }}
     
-    /* 背景色也更新為美股邏輯 */
+    /* 背景色設定 */
     .bg-up {{ background-color: {COLOR_UP}; }}
     .bg-down {{ background-color: {COLOR_DOWN}; }}
     .bg-gray {{ background-color: {COLOR_NEUTRAL}; }}
@@ -145,7 +145,7 @@ st.markdown(f"""
         font-weight: bold;
         color: #444;
         margin-bottom: 10px;
-        border-left: 4px solid {COLOR_UP}; /* 使用上漲色 */
+        border-left: 4px solid {COLOR_UP};
         padding-left: 8px;
     }}
     .calc-result {{
@@ -378,7 +378,6 @@ def render_inventory_tab(current_close_price, quote_type):
     market_val_net = (market_val_gross * (1 - SELL_RATE_FEE)) - (SELL_FIXED_FEE if total_shares > 0 else 0)
     
     unrealized_pl = market_val_net - total_invested_real
-    # 獲利=綠色(Up)，虧損=紅色(Down)
     pl_color = COLOR_UP if unrealized_pl >= 0 else COLOR_DOWN
 
     st.markdown(f"""
@@ -527,7 +526,6 @@ if ticker_input:
 
                 reg_change = regular_price - previous_close
                 reg_pct = (reg_change / previous_close) * 100
-                # 美股：綠漲紅跌
                 reg_color = COLOR_UP if reg_change > 0 else COLOR_DOWN
 
                 if is_extended:
@@ -571,10 +569,10 @@ if ticker_input:
                             day_close_reg = df_regular['Close'].iloc[-1]
                             # Sparkline: 美股綠漲紅跌
                             spark_color = COLOR_UP if day_close_reg >= day_open_reg else COLOR_DOWN
-                            # 填充色也要跟著變
-                            fill_rgba = "rgba(36, 136, 136, 0.15)" if day_close_reg >= day_open_reg else "rgba(231, 71, 94, 0.15)"
+                            # 填充色也要跟著變 (使用 hex 轉 rgba 的簡化邏輯)
+                            fill_color = "rgba(5, 154, 129, 0.15)" if day_close_reg >= day_open_reg else "rgba(242, 54, 69, 0.15)"
                             
-                            fig_spark.add_trace(go.Scatter(x=df_regular.index, y=df_regular['Close'], mode='lines', line=dict(color=spark_color, width=2), fill='tozeroy', fillcolor=fill_rgba))
+                            fig_spark.add_trace(go.Scatter(x=df_regular.index, y=df_regular['Close'], mode='lines', line=dict(color=spark_color, width=2), fill='tozeroy', fillcolor=fill_color))
                             
                             if 'VWAP' in df_regular.columns:
                                 fig_spark.add_trace(go.Scatter(x=df_regular.index, y=df_regular['VWAP'], mode='lines', line=dict(color='#2962FF', width=1), hoverinfo='skip'))
@@ -586,7 +584,7 @@ if ticker_input:
                         price_html = f"""<div class="metric-card"><div class="metric-title">最新股價</div><div class="metric-value" style="color:{reg_color}">{regular_price:.2f}</div><div class="metric-sub">{('+' if reg_change > 0 else '')}{reg_change:.2f} ({reg_pct:.2f}%)</div>"""
                         if is_extended:
                             price_html += f"""<div class="ext-price-box"><span class="ext-label">{ext_label}</span><span style="color:{ext_color}">{ext_price:.2f} ({('+' if ext_pct > 0 else '')}{ext_pct:.2f}%)</span></div>"""
-                        # H/L scale 顏色也更新
+                        
                         price_html += f"""<div class="spark-scale"><div style="color:{COLOR_UP}">H: {day_high_pct:+.1f}%</div><div style="margin-top:25px; color:{COLOR_DOWN}">L: {day_low_pct:+.1f}%</div></div></div>"""
                         st.markdown(price_html, unsafe_allow_html=True)
                         st.plotly_chart(fig_spark, use_container_width=True, config={'displayModeBar': False})
@@ -617,13 +615,11 @@ if ticker_input:
                 trend_desc = "多空不明，建議觀望"
                 if last['Close'] > strat_fast_val > strat_slow_val:
                     trend_msg = "🚀 火力全開！(多頭)"
-                    # 多頭=綠
                     trend_bg = "bg-up" 
                     trend_desc = "均線向上，順勢操作"
                     trend_status = "多頭"
                 elif last['Close'] < strat_fast_val < strat_slow_val:
                     trend_msg = "🐻 熊出沒注意 (空頭)"
-                    # 空頭=紅
                     trend_bg = "bg-down"
                     trend_desc = "均線蓋頭，保守為宜"
                     trend_status = "空頭"
@@ -636,7 +632,7 @@ if ticker_input:
                 v_bg = "bg-gray"
                 if vol_r > 2.0: 
                     v_msg = "🔥 資金派對 (爆量)"
-                    v_bg = "bg-down" # 爆量通常用顯眼色(紅)
+                    v_bg = "bg-down" # 爆量用紅色警示
                     vol_status = "爆量"
                 elif vol_r > 1.0:
                     v_msg = "💧 人氣回溫" 
@@ -646,7 +642,7 @@ if ticker_input:
                     st.markdown(f"""<div class="metric-card"><div class="metric-title">量能判讀</div><div class="metric-value" style="font-size:1.3rem;">{v_msg}</div><div><span class="status-badge {v_bg}">{vol_r:.1f} 倍均量</span></div><div class="metric-sub">成交量活躍度分析</div></div>""", unsafe_allow_html=True)
 
                 m_msg = "🐂 牛軍集結" if last['Hist'] > 0 else "📉 空軍壓境"
-                m_bg = "bg-up" if last['Hist'] > 0 else "bg-down" # 美股綠紅
+                m_bg = "bg-up" if last['Hist'] > 0 else "bg-down"
                 macd_status = "多方" if last['Hist'] > 0 else "空方"
                 with k3:
                     st.markdown(f"""<div class="metric-card"><div class="metric-title">MACD 趨勢</div><div class="metric-value" style="font-size:1.3rem;">{m_msg}</div><div><span class="status-badge {m_bg}">數值: {last['MACD']:.2f}</span></div><div class="metric-sub">籌碼動能方向</div></div>""", unsafe_allow_html=True)
@@ -656,11 +652,11 @@ if ticker_input:
                 r_bg = "bg-gray"
                 if r_val > 70: 
                     r_msg = "🔥 太燙了！(過熱)" 
-                    r_bg = "bg-down" # 警戒紅
+                    r_bg = "bg-down"
                     rsi_status = "過熱"
                 elif r_val < 30: 
                     r_msg = "🧊 跌過頭囉 (超賣)"
-                    r_bg = "bg-up" # 機會綠
+                    r_bg = "bg-up"
                     rsi_status = "超賣"
                 with k4:
                     st.markdown(f"""<div class="metric-card"><div class="metric-title">RSI 強弱</div><div class="metric-value" style="font-size:1.3rem;">{r_msg}</div><div><span class="status-badge {r_bg}">數值: {r_val:.1f}</span></div><div class="metric-sub">乖離率判斷</div></div>""", unsafe_allow_html=True)
@@ -687,7 +683,7 @@ if ticker_input:
 
                 st.markdown("<div class='chart-title'>📈 股價走勢 & 均線</div>", unsafe_allow_html=True)
                 fig_price = go.Figure()
-                # K線圖顏色設定 (美股綠漲紅跌)
+                # K線圖 (美股配色)
                 fig_price.add_trace(go.Candlestick(
                     x=df_chart.index, open=df_chart['Open'], high=df_chart['High'], low=df_chart['Low'], close=df_chart['Close'], 
                     name='K線', showlegend=False,
@@ -707,7 +703,7 @@ if ticker_input:
                 fig_price.update_xaxes(rangebreaks=no_weekends)
                 st.plotly_chart(fig_price, use_container_width=True, config={'displayModeBar': False})
 
-                # --- 成交量 (量能分級 + 均量線) ---
+                # --- 成交量 (暖色系分級) ---
                 vol_colors = []
                 for i in range(len(df_chart)):
                     row = df_chart.iloc[i]
@@ -722,8 +718,8 @@ if ticker_input:
                 st.markdown("<div class='chart-title'>📊 成交量</div>", unsafe_allow_html=True)
                 fig_vol = go.Figure()
                 fig_vol.add_trace(go.Bar(x=df_chart.index, y=df_chart['Volume'], marker_color=vol_colors, name='Volume'))
-                # 加入均量線
-                fig_vol.add_trace(go.Scatter(x=df_chart.index, y=df_chart['Vol_MA'], mode='lines', line=dict(color=VOL_MA_LINE, width=1.5), name='Vol MA'))
+                # 均量線 (黑色細線)
+                fig_vol.add_trace(go.Scatter(x=df_chart.index, y=df_chart['Vol_MA'], mode='lines', line=dict(color=VOL_MA_LINE, width=1.0), name='Vol MA'))
                 
                 fig_vol.update_layout(height=250, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False, showlegend=False)
                 fig_vol.update_xaxes(rangebreaks=no_weekends)
@@ -732,13 +728,13 @@ if ticker_input:
                 st.markdown("<div class='chart-title'>⚡ RSI 相對強弱指標</div>", unsafe_allow_html=True)
                 fig_rsi = go.Figure()
                 fig_rsi.add_trace(go.Scatter(x=df_chart.index, y=df_chart['RSI'], line=dict(color='#9C27B0', width=2), name='RSI'))
-                fig_rsi.add_hline(y=70, line_dash="dash", line_color="red")
-                fig_rsi.add_hline(y=30, line_dash="dash", line_color="green")
+                fig_rsi.add_hline(y=70, line_dash="dash", line_color=COLOR_DOWN) # 超買用跌色
+                fig_rsi.add_hline(y=30, line_dash="dash", line_color=COLOR_UP)   # 超賣用漲色
                 fig_rsi.update_layout(height=250, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False)
                 fig_rsi.update_xaxes(rangebreaks=no_weekends)
                 st.plotly_chart(fig_rsi, use_container_width=True, config={'displayModeBar': False})
 
-                # --- MACD (4級距配色) ---
+                # --- MACD (四色分級) ---
                 full_macd_colors = []
                 for i in range(len(df)):
                     hist = df['Hist'].iloc[i]
