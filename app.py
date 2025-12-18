@@ -139,7 +139,7 @@ if ticker_input:
         
         if not df.empty and len(df) > 200:
             
-            # --- A. 先計算所有指標 (確保 DataFrame 有資料) ---
+            # --- A. 先計算所有指標 ---
             if strategy_mode == "🤖 自動判別 (Auto)":
                 mcap = info.get('marketCap', 0)
                 if mcap > 200_000_000_000:
@@ -160,21 +160,20 @@ if ticker_input:
             macd = MACD(df['Close'])
             df['MACD'] = macd.macd()
             df['Signal'] = macd.macd_signal()
-            df['Hist'] = macd.macd_diff() # 這裡算出來了
+            df['Hist'] = macd.macd_diff() 
             df['Vol_MA'] = SMAIndicator(df['Volume'], window=20).sma_indicator()
 
-            # --- B. 之後再定義 last (這樣 last 裡面才會有 Hist) ---
+            # --- B. 定義 last ---
             last = df.iloc[-1]
             prev = df.iloc[-2]
 
-            # --- C. 計算當日 VWAP (Intraday) ---
+            # --- C. VWAP ---
             if not df_intra.empty:
-                # 典型的 VWAP = 累積(價格*量) / 累積(量)
                 df_intra['Cum_Vol'] = df_intra['Volume'].cumsum()
                 df_intra['Cum_Vol_Price'] = (df_intra['Close'] * df_intra['Volume']).cumsum()
                 df_intra['VWAP'] = df_intra['Cum_Vol_Price'] / df_intra['Cum_Vol']
 
-            # --- D. 價格顯示邏輯 ---
+            # --- D. 價格顯示 ---
             live_price = df_intra['Close'].iloc[-1] if not df_intra.empty else 0
             regular_price = info.get('currentPrice', info.get('regularMarketPrice', last['Close']))
             previous_close = info.get('previousClose', prev['Close'])
@@ -236,10 +235,8 @@ if ticker_input:
                     day_high_pct = ((day_high - previous_close) / previous_close) * 100
                     day_low_pct = ((day_low - previous_close) / previous_close) * 100
 
-                    # 1. 底圖 (虛線)
                     fig_spark.add_trace(go.Scatter(x=df_intra.index, y=df_intra['Close'], mode='lines', line=dict(color='#bdc3c7', width=1.5, dash='dot'), hoverinfo='skip'))
                     
-                    # 2. 正規時間 (實線)
                     mask = (df_intra_tz.index.time >= open_time) & (df_intra_tz.index.time <= close_time)
                     df_regular = df_intra[mask]
                     if not df_regular.empty:
@@ -249,7 +246,6 @@ if ticker_input:
                         fill_color = f"rgba({255 if day_close_reg>=day_open_reg else 33}, {75 if day_close_reg>=day_open_reg else 195}, {75 if day_close_reg>=day_open_reg else 84}, 0.15)"
                         fig_spark.add_trace(go.Scatter(x=df_regular.index, y=df_regular['Close'], mode='lines', line=dict(color=spark_color, width=2), fill='tozeroy', fillcolor=fill_color))
                         
-                        # 3. VWAP (細藍線) - 只畫在正規時間
                         if 'VWAP' in df_regular.columns:
                             fig_spark.add_trace(go.Scatter(x=df_regular.index, y=df_regular['VWAP'], mode='lines', line=dict(color='#2962FF', width=1), hoverinfo='skip'))
 
@@ -277,7 +273,7 @@ if ticker_input:
                 m_str = f"{mcap/1000000000:.1f}B" if mcap > 1000000000 else f"{mcap/1000000:.1f}M"
                 st.markdown(f"""<div class="metric-card"><div class="metric-title">市值</div><div class="metric-value">{m_str}</div><div class="metric-sub">{info.get('sector','N/A')}</div></div>""", unsafe_allow_html=True)
 
-            # 【區塊 B】AI 訊號 (現在 last['Hist'] 絕對沒問題了)
+            # 【區塊 B】AI 訊號
             st.markdown("#### 🤖 策略訊號解讀")
             k1, k2, k3, k4 = st.columns(4)
             
@@ -286,7 +282,6 @@ if ticker_input:
             vol_status = "一般"
             macd_status = "不明"
 
-            # 趨勢
             trend_msg = "💤 睡覺行情 (盤整)"
             trend_bg = "bg-gray"
             trend_desc = "多空不明，建議觀望"
@@ -304,7 +299,6 @@ if ticker_input:
             with k1:
                 st.markdown(f"""<div class="metric-card"><div class="metric-title">趨勢訊號</div><div class="metric-value" style="font-size:1.3rem;">{trend_msg}</div><div><span class="status-badge {trend_bg}">MA{strat_fast} vs MA{strat_slow}</span></div><div class="metric-sub">{trend_desc}</div></div>""", unsafe_allow_html=True)
             
-            # 量能
             vol_r = last['Volume'] / df['Vol_MA'].iloc[-1] if df['Vol_MA'].iloc[-1] > 0 else 0
             v_msg = "❄️ 冷冷清清"
             v_bg = "bg-gray"
@@ -319,14 +313,12 @@ if ticker_input:
             with k2:
                 st.markdown(f"""<div class="metric-card"><div class="metric-title">量能判讀</div><div class="metric-value" style="font-size:1.3rem;">{v_msg}</div><div><span class="status-badge {v_bg}">{vol_r:.1f} 倍均量</span></div><div class="metric-sub">成交量活躍度分析</div></div>""", unsafe_allow_html=True)
 
-            # MACD
             m_msg = "🐂 牛軍集結" if last['Hist'] > 0 else "📉 空軍壓境"
             m_bg = "bg-red" if last['Hist'] > 0 else "bg-green"
             macd_status = "多方" if last['Hist'] > 0 else "空方"
             with k3:
                 st.markdown(f"""<div class="metric-card"><div class="metric-title">MACD 趨勢</div><div class="metric-value" style="font-size:1.3rem;">{m_msg}</div><div><span class="status-badge {m_bg}">數值: {last['MACD']:.2f}</span></div><div class="metric-sub">籌碼動能方向</div></div>""", unsafe_allow_html=True)
 
-            # RSI
             r_val = last['RSI']
             r_msg = "⚖️ 多空拔河"
             r_bg = "bg-gray"
@@ -352,29 +344,45 @@ if ticker_input:
                 ma_html_inner += f'<div class="ma-box"><div class="ma-label">MA {d}</div><div class="ma-val {cls}">{val:.2f} {arrow}</div></div>'
             st.markdown(f'<div class="ma-container">{ma_html_inner}</div>', unsafe_allow_html=True)
 
-            # 【區塊 D】圖表 (4張獨立卡片)
+            # 【區塊 D】圖表
             st.markdown("#### 📉 技術分析")
             
             df_chart = df.tail(250) 
             
-            # 1. 主圖
+            # 主圖 (圖例移到下方)
             fig_price = go.Figure()
             fig_price.add_trace(go.Candlestick(x=df_chart.index, open=df_chart['Open'], high=df_chart['High'], low=df_chart['Low'], close=df_chart['Close'], name='K線', showlegend=False))
             fig_price.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_5'], line=dict(color='#D500F9', width=1), name='MA5', showlegend=True))
             fig_price.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_20'], line=dict(color='#FF6D00', width=1.5), name='MA20', showlegend=True))
             fig_price.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_60'], line=dict(color='#00C853', width=1.5), name='MA60', showlegend=True))
             fig_price.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_120'], line=dict(color='#78909C', width=1.5, dash='dot'), name='MA120', showlegend=True))
-            fig_price.update_layout(title="📈 股價走勢 & 均線 (1年)", height=400, margin=dict(l=10, r=10, t=40, b=10), paper_bgcolor='white', plot_bgcolor='white', xaxis_rangeslider_visible=False, dragmode=False, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+            
+            # 關鍵修改：legend 移到下方 (y < 0)
+            fig_price.update_layout(
+                title="📈 股價走勢 & 均線 (1年)",
+                height=400,
+                margin=dict(l=10, r=10, t=40, b=50), # 底部留多一點白
+                paper_bgcolor='white',
+                plot_bgcolor='white',
+                xaxis_rangeslider_visible=False,
+                dragmode=False,
+                legend=dict(
+                    orientation="h",
+                    yanchor="top",
+                    y=-0.2, # 移到 X 軸下方
+                    xanchor="center",
+                    x=0.5
+                )
+            )
             st.plotly_chart(fig_price, use_container_width=True, config={'displayModeBar': False})
 
-            # 2. 成交量
+            # 其他圖表 (維持原樣)
             fig_vol = go.Figure()
             colors = ['red' if o > c else 'green' for o, c in zip(df_chart['Open'], df_chart['Close'])]
             fig_vol.add_trace(go.Bar(x=df_chart.index, y=df_chart['Volume'], marker_color=colors, name='Volume'))
             fig_vol.update_layout(title="📊 成交量", height=250, margin=dict(l=10, r=10, t=40, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False)
             st.plotly_chart(fig_vol, use_container_width=True, config={'displayModeBar': False})
 
-            # 3. RSI
             fig_rsi = go.Figure()
             fig_rsi.add_trace(go.Scatter(x=df_chart.index, y=df_chart['RSI'], line=dict(color='#9C27B0', width=2), name='RSI'))
             fig_rsi.add_hline(y=70, line_dash="dash", line_color="red")
@@ -382,7 +390,6 @@ if ticker_input:
             fig_rsi.update_layout(title="⚡ RSI 相對強弱指標", height=250, margin=dict(l=10, r=10, t=40, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False)
             st.plotly_chart(fig_rsi, use_container_width=True, config={'displayModeBar': False})
 
-            # 4. MACD
             fig_macd = go.Figure()
             fig_macd.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MACD'], line=dict(color='#2196F3', width=1), name='MACD'))
             fig_macd.add_trace(go.Scatter(x=df_chart.index, y=df_chart['Signal'], line=dict(color='#FF5722', width=1), name='Signal'))
