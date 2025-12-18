@@ -14,38 +14,47 @@ st.markdown("""
     <style>
     .stApp { background-color: #f8f9fa; }
     
-    /* 資訊卡片 */
+    /* 通用卡片樣式 */
     .metric-card {
         background-color: #ffffff;
         padding: 15px;
         border-radius: 12px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         margin-bottom: 10px;
         border: 1px solid #e9ecef;
     }
     .metric-title { color: #6c757d; font-size: 0.85rem; font-weight: 700; letter-spacing: 0.5px; }
     .metric-value { font-size: 1.4rem; font-weight: 800; color: #212529; margin: 5px 0; }
-    .metric-sub { font-size: 0.85rem; color: #495057; }
+    .metric-sub { font-size: 0.8rem; color: #adb5bd; }
     
-    /* 均線監控表樣式 */
-    .ma-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
-        gap: 10px;
-        text-align: center;
+    /* 均線監控專用樣式 (Flexbox) */
+    .ma-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: space-between;
         background-color: #ffffff;
         padding: 15px;
         border-radius: 12px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         border: 1px solid #e9ecef;
+        margin-top: 5px;
+        margin-bottom: 20px;
     }
-    .ma-item { padding: 5px; }
-    .ma-label { font-size: 0.8rem; color: #666; font-weight: bold; }
-    .ma-val { font-size: 1rem; font-weight: bold; color: #333; }
-    .trend-up { color: #ff4b4b; }
-    .trend-down { color: #21c354; }
+    .ma-box {
+        flex: 1 1 80px; /* 最小寬度80px，自動伸縮 */
+        text-align: center;
+        padding: 8px;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+    }
+    .ma-label { font-size: 0.8rem; font-weight: bold; color: #495057; margin-bottom: 4px; }
+    .ma-val { font-size: 1rem; font-weight: 800; }
+    .txt-up { color: #ff4b4b; }
+    .txt-down { color: #21c354; }
 
-    /* 標籤顏色 */
+    /* 狀態標籤 */
     .status-badge { padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; color: white; display: inline-block; margin-top: 5px; }
     .bg-red { background-color: #ff4b4b; }
     .bg-green { background-color: #21c354; }
@@ -61,7 +70,7 @@ st.markdown("""
 @st.cache_data(ttl=300)
 def get_stock_data(ticker):
     stock = yf.Ticker(ticker)
-    # 抓取 2 年資料以確保 200MA 能正確計算
+    # 抓取 2 年資料
     df = stock.history(period="2y")
     info = stock.info
     return df, info
@@ -90,7 +99,7 @@ if ticker_input:
         df, info = get_stock_data(ticker_input)
         
         if not df.empty and len(df) > 200:
-            # --- 自動策略邏輯 ---
+            # --- 自動策略 ---
             if strategy_mode == "🤖 自動判別 (Auto)":
                 mcap = info.get('marketCap', 0)
                 if mcap > 200_000_000_000:
@@ -100,16 +109,17 @@ if ticker_input:
                     strat_fast, strat_slow = 5, 10
                     strat_desc = "🚀 小型飆股"
             
-            # 2. 計算所有需要的均線 (5, 10, 20, 30, 60, 120, 200)
-            ma_days = [5, 10, 20, 30, 60, 120, 200]
-            for d in ma_days:
+            # 2. 計算指標
+            # 均線列表
+            ma_list = [5, 10, 20, 30, 60, 120, 200]
+            for d in ma_list:
                 df[f'MA_{d}'] = SMAIndicator(df['Close'], window=d).sma_indicator()
             
-            # 3. 策略判讀均線 (動態)
+            # 策略判讀均線
             strat_fast_val = SMAIndicator(df['Close'], window=strat_fast).sma_indicator().iloc[-1]
             strat_slow_val = SMAIndicator(df['Close'], window=strat_slow).sma_indicator().iloc[-1]
             
-            # 4. 其他指標
+            # 其他
             df['RSI'] = RSIIndicator(df['Close'], window=14).rsi()
             macd = MACD(df['Close'])
             df['MACD'] = macd.macd()
@@ -163,7 +173,7 @@ if ticker_input:
                     <div class="metric-sub">{info.get('sector','N/A')}</div>
                 </div>""", unsafe_allow_html=True)
 
-            # 【區塊 B】AI 訊號卡片
+            # 【區塊 B】AI 訊號卡片 (移除多餘文字)
             st.markdown("#### 🤖 策略訊號解讀")
             k1, k2, k3, k4 = st.columns(4)
             
@@ -199,7 +209,7 @@ if ticker_input:
             with k2:
                 st.markdown(f"""
                 <div class="metric-card">
-                    <div class="metric-title">量能判讀 (RVol)</div>
+                    <div class="metric-title">量能判讀</div>
                     <div class="metric-value" style="font-size:1.1rem; margin:10px 0;">{vol_r:.1f} 倍均量</div>
                     <div><span class="status-badge {v_bg}">{v_msg}</span></div>
                 </div>""", unsafe_allow_html=True)
@@ -213,7 +223,6 @@ if ticker_input:
                     <div class="metric-title">MACD</div>
                     <div class="metric-value" style="font-size:1.1rem; margin:10px 0;">{last['MACD']:.2f}</div>
                     <div><span class="status-badge {m_bg}">{m_msg}</span></div>
-                    <div class="metric-sub">快線數值</div>
                 </div>""", unsafe_allow_html=True)
 
             # 4. RSI
@@ -229,35 +238,33 @@ if ticker_input:
                     <div class="metric-title">RSI</div>
                     <div class="metric-value" style="font-size:1.1rem; margin:10px 0;">{r_val:.1f}</div>
                     <div><span class="status-badge {r_bg}">{r_msg}</span></div>
-                    <div class="metric-sub">強弱指標</div>
                 </div>""", unsafe_allow_html=True)
 
-            # 【區塊 C】關鍵均線監控表 (新功能！)
-            st.markdown("#### 📏 關鍵均線監控 (價位 & 趨勢)")
+            # 【區塊 C】關鍵均線監控 (修復：使用 HTML 字串拼接避免錯誤)
+            st.markdown("#### 📏 關鍵均線監控")
             
-            # 建立均線 HTML 結構
-            ma_html = '<div class="ma-grid">'
-            for d in [5, 10, 20, 30, 60, 120, 200]:
+            # 組合 HTML
+            html_content = '<div class="ma-container">'
+            for d in ma_list:
                 val = last[f'MA_{d}']
                 prev_val = prev[f'MA_{d}']
-                # 判斷趨勢箭頭
-                arrow = "🔺" if val > prev_val else "🔻"
-                color_cls = "trend-up" if val > prev_val else "trend-down"
+                # 判斷箭頭與顏色
+                arrow = "▲" if val > prev_val else "▼"
+                cls = "txt-up" if val > prev_val else "txt-down"
                 
-                ma_html += f"""
-                <div class="ma-item">
-                    <div class="ma-label">MA {d}</div>
-                    <div class="ma-val {color_cls}">{arrow} {val:.2f}</div>
-                </div>
+                html_content += f"""
+                    <div class="ma-box">
+                        <div class="ma-label">MA {d}</div>
+                        <div class="ma-val {cls}">{val:.2f} {arrow}</div>
+                    </div>
                 """
-            ma_html += '</div>'
-            st.markdown(ma_html, unsafe_allow_html=True)
+            html_content += '</div>'
+            st.markdown(html_content, unsafe_allow_html=True)
 
             # 【區塊 D】圖表 (1年日線, 只顯示 4 條線)
-            st.markdown("#### 📉 技術分析圖表 (1年日線)")
+            st.markdown("#### 📉 技術分析 (1年日線)")
             
-            # 為了圖表顯示，只取最近 1 年的數據
-            df_chart = df.tail(250) # 約一年交易日
+            df_chart = df.tail(250) 
             
             fig = make_subplots(
                 rows=4, cols=1, 
@@ -309,6 +316,6 @@ if ticker_input:
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
         else:
-            st.error("資料不足 (需至少2年數據以計算年線)，請檢查股票代號。")
+            st.error("資料不足，請檢查股票代號。")
     except Exception as e:
         st.error(f"系統忙碌中: {e}")
