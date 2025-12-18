@@ -22,6 +22,10 @@ st.markdown("""
         font-size: 1.1rem;
         font-weight: 600;
     }
+    /* 強制讓 Plotly 圖表在手機上更好滑動 */
+    .js-plotly-plot .plotly .modebar {
+        display: none !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -242,12 +246,19 @@ if st.button("🚀 開始智能診斷", type="primary", use_container_width=True
         hist_colors = ['red' if h < 0 else 'green' for h in df['MACD_Hist']]
         fig.add_trace(go.Bar(x=df.index, y=df['MACD_Hist'], marker_color=hist_colors, name='Hist'), row=4, col=1)
 
-        # 版面設定
+        # 版面設定 (關鍵修正：鎖定座標軸)
         fig.update_layout(
             height=900, 
             xaxis_rangeslider_visible=False,
             showlegend=False,
-            margin=dict(l=10, r=10, t=30, b=10)
+            margin=dict(l=10, r=10, t=30, b=10),
+            dragmode=False,  # 禁用滑鼠/手指拖曳功能
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        # 強制鎖定所有子圖的 X 軸與 Y 軸，避免手機誤觸縮放
+        fig.update_xaxes(fixedrange=True)
+        fig.update_yaxes(fixedrange=True)
+        
+        # config 設定：隱藏浮動工具列，禁用滾輪縮放
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': False})
+    
