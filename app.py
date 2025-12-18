@@ -471,7 +471,7 @@ if ticker_input:
                 st.markdown(f"""<div class="ai-summary-card"><div class="ai-title">🤖 AI 綜合判讀報告</div><div class="ai-content">{ai_suggestion}<br><br><b>關鍵數據摘要：</b><br>• 趨勢：{trend_status}<br>• 量能：{vol_status} ({vol_r:.1f}倍)<br>• 籌碼 (MACD)：{macd_status}<br>• 強弱 (RSI)：{r_val:.1f} ({rsi_status})</div></div>""", unsafe_allow_html=True)
 
             # ==========================================
-            # 分頁 2: 交易規劃計算機 (手機優化)
+            # 分頁 2: 交易規劃計算機 (手機優化 - 雙向試算版)
             # ==========================================
             with tab_calc:
                 st.markdown("#### 🧮 交易前規劃")
@@ -483,16 +483,16 @@ if ticker_input:
                 # 顯示匯率資訊
                 st.info(f"💡 目前美金匯率參考：**1 USD ≈ {exchange_rate:.2f} TWD**")
 
-                # --- 1. 購買力試算 ---
+                # --- 1. 購買力試算 (維持不變) ---
                 with st.container():
                     st.markdown('<div class="calc-header">💰 預算試算 (我有多少錢?)</div>', unsafe_allow_html=True)
                     
-                    # 使用两列布局，手机上会自动堆叠
                     bc1, bc2 = st.columns(2)
                     with bc1:
                         budget_twd = st.number_input("台幣預算 (TWD)", value=100000, step=1000)
                     with bc2:
-                        buy_price_input = st.number_input("買入價格 (USD)", value=float(current_close_price), step=0.1, format="%.2f")
+                        # 這裡預設帶入 current_close_price
+                        buy_price_input = st.number_input("預計買入價 (USD)", value=float(current_close_price), step=0.1, format="%.2f")
 
                     usd_budget = budget_twd / exchange_rate
                     available_usd = usd_budget - FEE_PER_TX
@@ -515,39 +515,73 @@ if ticker_input:
                 
                 st.markdown("---")
 
-                # --- 2. 損益兩平 & 目標獲利 ---
+                # --- 2. 賣出試算 (雙向邏輯) ---
                 with st.container():
-                    st.markdown('<div class="calc-header">⚖️ 賣出試算 (回本與獲利)</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="calc-header">⚖️ 賣出試算 (獲利預估)</div>', unsafe_allow_html=True)
                     
-                    sc1, sc2 = st.columns(2)
-                    with sc1:
-                        shares_held = st.number_input("持有股數", value=10.0, step=1.0)
-                    with sc2:
-                        target_profit_twd = st.number_input("想賺多少台幣?", value=3000, step=500)
+                    # 步驟 A: 輸入持有成本
+                    c_input1, c_input2 = st.columns(2)
+                    with c_input1:
+                        shares_held = st.number_input("持有股數", value=10.0, step=1.0, key="calc_shares")
+                    with c_input2:
+                        # 預設帶入上面的買入價，方便連貫操作
+                        cost_price = st.number_input("買入成本 (USD)", value=buy_price_input, step=0.1, format="%.2f", key="calc_cost")
 
-                    # 計算邏輯
-                    total_cost = (buy_price_input * shares_held) + FEE_PER_TX
-                    # 損益兩平
-                    breakeven_price = (total_cost + FEE_PER_TX) / (shares_held * (1 - SELLING_TAX))
-                    # 目標獲利
-                    target_profit_usd = target_profit_twd / exchange_rate
-                    target_sell_price = (total_cost + target_profit_usd + FEE_PER_TX) / (shares_held * (1 - SELLING_TAX))
+                    # 計算總成本 (包含買入手續費)
+                    total_cost_usd_real = (cost_price * shares_held) + FEE_PER_TX
                     
-                    r1, r2 = st.columns(2)
-                    with r1:
-                         st.markdown(f"""
+                    # 顯示損益兩平點 (這是固定資訊，隨時都要看)
+                    breakeven_price = (total_cost_usd_real + FEE_PER_TX) / (shares_held * (1 - SELLING_TAX))
+                    st.caption(f"🛡️ 損益兩平價 (不賠錢的賣點): **${breakeven_price:.2f}**")
+
+                    st.divider()
+
+                    # 步驟 B: 選擇試算模式
+                    calc_mode = st.radio("選擇試算目標：", 
+                                       ["🎯 設定【目標獲利】反推股價", "💵 設定【賣出價格】計算獲利"], 
+                                       horizontal=True)
+
+                    if calc_mode == "🎯 設定【目標獲利】反推股價":
+                        # --- 模式 1: 用想賺多少錢 -> 算賣價 ---
+                        target_profit_twd = st.number_input("我想賺多少台幣 (TWD)?", value=3000, step=500)
+                        
+                        target_profit_usd = target_profit_twd / exchange_rate
+                        # 公式: 營收 - 成本 = 利潤
+                        target_sell_price = (total_cost_usd_real + target_profit_usd + FEE_PER_TX) / (shares_held * (1 - SELLING_TAX))
+                        pct_need = ((target_sell_price / cost_price) - 1) * 100
+                        
+                        st.markdown(f"""
                         <div class="calc-result">
-                            <div class="calc-res-title">損益兩平價</div>
-                            <div class="calc-res-val" style="color:#666">${breakeven_price:.2f}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    with r2:
-                         pct_need = ((target_sell_price / buy_price_input) - 1) * 100
-                         st.markdown(f"""
-                        <div class="calc-result">
-                            <div class="calc-res-title">目標賣出價</div>
+                            <div class="calc-res-title">建議掛單賣出價</div>
                             <div class="calc-res-val" style="color:#ff4b4b">${target_sell_price:.2f}</div>
                             <div style="font-size:0.8rem; color:#ff4b4b">需上漲 {pct_need:.1f}%</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                    else:
+                        # --- 模式 2: 用想賣多少錢 -> 算獲利 ---
+                        target_sell_input = st.number_input("預計賣出價格 (USD)", value=float(cost_price)*1.05, step=0.1, format="%.2f")
+                        
+                        # 計算賣出總營收
+                        gross_revenue = target_sell_input * shares_held
+                        # 扣掉賣出稅與手續費
+                        net_revenue = gross_revenue - (gross_revenue * SELLING_TAX) - FEE_PER_TX
+                        # 淨利 (USD)
+                        net_profit_usd = net_revenue - total_cost_usd_real
+                        # 淨利 (TWD)
+                        net_profit_twd = net_profit_usd * exchange_rate
+                        
+                        # 顏色邏輯：賺錢紅，賠錢綠
+                        res_color = "#ff4b4b" if net_profit_twd >= 0 else "#21c354"
+                        res_prefix = "+" if net_profit_twd >= 0 else ""
+
+                        st.markdown(f"""
+                        <div class="calc-result">
+                            <div class="calc-res-title">預估淨獲利 (TWD)</div>
+                            <div class="calc-res-val" style="color:{res_color}">{res_prefix}{net_profit_twd:.0f} 元</div>
+                            <div style="font-size:0.8rem; color:#666">
+                            美金損益: {res_prefix}${net_profit_usd:.2f}
+                            </div>
                         </div>
                         """, unsafe_allow_html=True)
 
