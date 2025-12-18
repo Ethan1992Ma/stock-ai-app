@@ -29,7 +29,7 @@ VOL_MA_LINE = "#000000" # 均量線 (純黑)
 # VWAP 配色
 COLOR_VWAP = "#FF9800"  # 琥珀橘
 
-# --- 2. CSS 美化 (強制亮色模式 + 強制字體黑) ---
+# --- 2. CSS 美化 (權重修正版) ---
 st.markdown(f"""
     <style>
     /* [強制亮色模式] */
@@ -43,14 +43,21 @@ st.markdown(f"""
     
     .stApp {{ background-color: #f8f9fa; }}
     
-    /* 強制所有文字深色 (解決 iPhone Dark Mode 問題) */
-    h1, h2, h3, h4, h5, h6, p, div, span, label, li {{
+    /* 強制所有文字深色 (解決 iPhone Dark Mode) */
+    /* 注意：這裡不針對 span 做全域強制，以免蓋掉我們自定義的顏色 span */
+    h1, h2, h3, h4, h5, h6, p, div, label, li {{
         color: #000000 !important;
     }}
     
+    /* 輸入框文字修正 */
     .stTextInput > label, .stNumberInput > label, .stRadio > label {{
         color: #000000 !important;
     }}
+    
+    /* --- [VIP 顏色專用類別] 權重最高 --- */
+    .txt-up-vip {{ color: {COLOR_UP} !important; font-weight: bold; }}
+    .txt-down-vip {{ color: {COLOR_DOWN} !important; font-weight: bold; }}
+    .txt-gray-vip {{ color: {COLOR_NEUTRAL} !important; }}
     
     .chart-title {{
         font-size: 1.1rem;
@@ -70,9 +77,10 @@ st.markdown(f"""
         border: 1px solid #f0f0f0;
         position: relative;
     }}
+    /* metric-title 和 sub 保持原色設定 */
     .metric-title {{ color: #6c757d !important; font-size: 0.9rem; font-weight: 700; margin-bottom: 5px; }}
     .metric-value {{ font-size: 1.8rem; font-weight: 800; color: #212529 !important; }}
-    .metric-sub {{ font-size: 0.9rem; color: #888 !important; margin-top: 5px; }}
+    .metric-sub {{ font-size: 0.9rem; margin-top: 5px; }} 
     
     .ext-price-box {{
         background-color: #f1f3f5;
@@ -80,6 +88,7 @@ st.markdown(f"""
         border-radius: 6px;
         font-size: 0.85rem;
         font-weight: 600;
+        color: #666 !important;
         margin-top: 8px;
         display: inline-block;
     }}
@@ -94,6 +103,7 @@ st.markdown(f"""
         font-size: 0.7rem;
         line-height: 1.4;
         font-weight: 600;
+        /* 移除這裡的 color 強制，交給內部的 span 控制 */
     }}
 
     .ai-summary-card {{
@@ -129,9 +139,6 @@ st.markdown(f"""
     }}
     .ma-label {{ font-size: 0.8rem; font-weight: bold; color: #666 !important; margin-bottom: 5px; }}
     .ma-val {{ font-size: 1.1rem; font-weight: 800; }}
-    
-    .txt-up {{ color: {COLOR_UP} !important; }}
-    .txt-down {{ color: {COLOR_DOWN} !important; }}
     
     .status-badge {{ 
         padding: 4px 8px; 
@@ -173,7 +180,8 @@ st.markdown(f"""
         margin-top: 10px;
     }}
     .calc-res-title {{ font-size: 0.8rem; color: #888 !important; }}
-    .calc-res-val {{ font-size: 1.4rem; font-weight: bold; color: #333 !important; }}
+    /* 移除這裡的 color: #333 !important，改用 class 控制 */
+    .calc-res-val {{ font-size: 1.4rem; font-weight: bold; }}
     
     .fee-badge {{
         background-color: #fff3cd;
@@ -264,7 +272,7 @@ def render_calculator_tab(current_close_price, exchange_rate, quote_type):
             st.markdown(f"""
             <div class="calc-result">
                 <div class="calc-res-title">可購買股數</div>
-                <div class="calc-res-val" style="color:{COLOR_UP} !important;">{max_shares:.2f} 股</div>
+                <div class="calc-res-val" style="color:#0d6efd !important;">{max_shares:.2f} 股</div>
                 <div style="font-size:0.8rem; margin-top:5px; color:#666 !important;">
                 總成本: ${total_buy_cost_usd:.2f} USD (約 {total_buy_cost_twd:.0f} TWD)
                 </div>
@@ -312,8 +320,8 @@ def render_calculator_tab(current_close_price, exchange_rate, quote_type):
             st.markdown(f"""
             <div class="calc-result">
                 <div class="calc-res-title">建議掛單賣出價</div>
-                <div class="calc-res-val" style="color:{COLOR_UP} !important;">${target_sell_price:.2f}</div>
-                <div style="font-size:0.8rem; color:{COLOR_UP} !important;">需上漲 {pct_need:.1f}%</div>
+                <div class="calc-res-val txt-up-vip">${target_sell_price:.2f}</div>
+                <div style="font-size:0.8rem;" class="txt-up-vip">需上漲 {pct_need:.1f}%</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -328,14 +336,14 @@ def render_calculator_tab(current_close_price, exchange_rate, quote_type):
             net_profit_usd = net_revenue_usd - real_buy_cost_usd
             net_profit_twd = net_profit_usd * exchange_rate
             
-            # 美股邏輯：獲利=綠色(Up)，虧損=紅色(Down)
-            res_color = COLOR_UP if net_profit_twd >= 0 else COLOR_DOWN
+            # 使用 VIP class
+            res_class = "txt-up-vip" if net_profit_twd >= 0 else "txt-down-vip"
             res_prefix = "+" if net_profit_twd >= 0 else ""
 
             st.markdown(f"""
             <div class="calc-result">
                 <div class="calc-res-title">預估淨獲利 (TWD)</div>
-                <div class="calc-res-val" style="color:{res_color} !important;">{res_prefix}{net_profit_twd:.0f} 元</div>
+                <div class="calc-res-val {res_class}">{res_prefix}{net_profit_twd:.0f} 元</div>
                 <div style="font-size:0.8rem; color:#666 !important;">
                 美金損益: {res_prefix}${net_profit_usd:.2f}
                 </div>
@@ -395,14 +403,18 @@ def render_inventory_tab(current_close_price, quote_type):
     market_val_net = (market_val_gross * (1 - SELL_RATE_FEE)) - (SELL_FIXED_FEE if total_shares > 0 else 0)
     
     unrealized_pl = market_val_net - total_invested_real
-    pl_color = COLOR_UP if unrealized_pl >= 0 else COLOR_DOWN
+    
+    # 使用 VIP Class
+    pl_class = "txt-up-vip" if unrealized_pl >= 0 else "txt-down-vip"
+    # 平均成本變化顏色
+    avg_change_class = "txt-up-vip" if new_avg_price < curr_avg_price else "txt-gray-vip"
 
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-title">加碼後平均成交價</div>
         <div style="display:flex; justify-content:space-between; align-items:end;">
             <div class="metric-value">${new_avg_price:.2f}</div>
-            <div style="color:{COLOR_UP if new_avg_price < curr_avg_price else '#888'} !important; font-weight:bold;">
+            <div class="{avg_change_class}">
                 {f'⬇ 下降 ${curr_avg_price - new_avg_price:.2f}' if new_avg_price < curr_avg_price else '變動不大'}
             </div>
         </div>
@@ -421,7 +433,7 @@ def render_inventory_tab(current_close_price, quote_type):
         st.markdown(f"""
         <div class="calc-result">
             <div class="calc-res-title">預估總損益 (含費)</div>
-            <div class="calc-res-val" style="color:{pl_color} !important;">${unrealized_pl:.2f}</div>
+            <div class="calc-res-val {pl_class}">${unrealized_pl:.2f}</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -543,12 +555,15 @@ if ticker_input:
 
                 reg_change = regular_price - previous_close
                 reg_pct = (reg_change / previous_close) * 100
-                reg_color = COLOR_UP if reg_change > 0 else COLOR_DOWN
+                # 美股：綠漲紅跌 (使用自定義色)
+                
+                # 使用 VIP class 字串來代入 HTML
+                reg_class = "txt-up-vip" if reg_change > 0 else "txt-down-vip"
 
                 if is_extended:
                     ext_change = ext_price - regular_price
                     ext_pct = (ext_change / regular_price) * 100
-                    ext_color = COLOR_UP if ext_change > 0 else COLOR_DOWN
+                    ext_class = "txt-up-vip" if ext_change > 0 else "txt-down-vip"
 
                 st.markdown(f"### 📱 {info.get('longName', ticker_input)} ({ticker_input})")
                 st.caption(f"目前策略：{strat_desc}")
@@ -596,16 +611,17 @@ if ticker_input:
                         y_max = day_high * 1.001
                         fig_spark.update_layout(height=80, margin=dict(l=0, r=40, t=5, b=5), xaxis=dict(visible=False), yaxis=dict(visible=False, range=[y_min, y_max]), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False, dragmode=False)
                         
-                        price_html = f"""<div class="metric-card"><div class="metric-title">最新股價</div><div class="metric-value" style="color:{reg_color} !important;">{regular_price:.2f}</div><div class="metric-sub" style="color:{reg_color} !important;">{('+' if reg_change > 0 else '')}{reg_change:.2f} ({reg_pct:.2f}%)</div>"""
+                        # [修正] 使用 VIP Class
+                        price_html = f"""<div class="metric-card"><div class="metric-title">最新股價</div><div class="metric-value {reg_class}">{regular_price:.2f}</div><div class="metric-sub {reg_class}">{('+' if reg_change > 0 else '')}{reg_change:.2f} ({reg_pct:.2f}%)</div>"""
                         
                         if is_extended:
-                            price_html += f"""<div class="ext-price-box"><span class="ext-label">{ext_label}</span><span style="color:{ext_color} !important;">{ext_price:.2f} ({('+' if ext_pct > 0 else '')}{ext_pct:.2f}%)</span></div>"""
+                            price_html += f"""<div class="ext-price-box"><span class="ext-label">{ext_label}</span><span class="{ext_class}">{ext_price:.2f} ({('+' if ext_pct > 0 else '')}{ext_pct:.2f}%)</span></div>"""
                         
-                        # [修正重點] H/L 的顏色加入 !important
-                        color_h = COLOR_UP if day_high_pct >= 0 else COLOR_DOWN
-                        color_l = COLOR_UP if day_low_pct >= 0 else COLOR_DOWN
+                        # [修正] H/L 使用 VIP Class
+                        h_class = "txt-up-vip" if day_high_pct >= 0 else "txt-down-vip"
+                        l_class = "txt-up-vip" if day_low_pct >= 0 else "txt-down-vip"
                         
-                        price_html += f"""<div class="spark-scale"><div style="color:{color_h} !important;">H: {day_high_pct:+.1f}%</div><div style="margin-top:25px; color:{color_l} !important;">L: {day_low_pct:+.1f}%</div></div></div>"""
+                        price_html += f"""<div class="spark-scale"><div class="{h_class}">H: {day_high_pct:+.1f}%</div><div style="margin-top:25px;" class="{l_class}">L: {day_low_pct:+.1f}%</div></div></div>"""
                         st.markdown(price_html, unsafe_allow_html=True)
                         st.plotly_chart(fig_spark, use_container_width=True, config={'displayModeBar': False, 'staticPlot': True})
                     else:
@@ -687,7 +703,7 @@ if ticker_input:
                     val = last[f'MA_{d}']
                     prev_val = prev[f'MA_{d}']
                     arrow = "▲" if val > prev_val else "▼"
-                    cls = "txt-up" if val > prev_val else "txt-down"
+                    cls = "txt-up-vip" if val > prev_val else "txt-down-vip"
                     ma_html_inner += f'<div class="ma-box"><div class="ma-label">MA {d}</div><div class="ma-val {cls}">{val:.2f} {arrow}</div></div>'
                 st.markdown(f'<div class="ma-container">{ma_html_inner}</div>', unsafe_allow_html=True)
 
