@@ -14,54 +14,62 @@ st.markdown("""
     <style>
     .stApp { background-color: #f8f9fa; }
     
-    /* 通用卡片樣式 */
+    /* 漂亮的資訊卡片 */
     .metric-card {
         background-color: #ffffff;
-        padding: 15px;
-        border-radius: 12px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        padding: 20px;
+        border-radius: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         margin-bottom: 10px;
-        border: 1px solid #e9ecef;
+        border: 1px solid #f0f0f0;
     }
-    .metric-title { color: #6c757d; font-size: 0.85rem; font-weight: 700; letter-spacing: 0.5px; }
-    .metric-value { font-size: 1.4rem; font-weight: 800; color: #212529; margin: 5px 0; }
-    .metric-sub { font-size: 0.8rem; color: #adb5bd; }
+    .metric-title { color: #6c757d; font-size: 0.9rem; font-weight: 700; margin-bottom: 5px; }
+    .metric-value { font-size: 1.6rem; font-weight: 800; color: #212529; }
+    .metric-sub { font-size: 0.85rem; color: #888; margin-top: 5px; }
     
-    /* 均線監控專用樣式 (Flexbox) */
+    /* 均線監控容器 (Flexbox 修復版) */
     .ma-container {
         display: flex;
         flex-wrap: wrap;
-        gap: 8px;
-        justify-content: space-between;
+        gap: 10px;
         background-color: #ffffff;
-        padding: 15px;
-        border-radius: 12px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-        border: 1px solid #e9ecef;
-        margin-top: 5px;
+        padding: 20px;
+        border-radius: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        border: 1px solid #f0f0f0;
         margin-bottom: 20px;
     }
     .ma-box {
-        flex: 1 1 80px; /* 最小寬度80px，自動伸縮 */
+        flex: 1 1 100px; /* 自動伸縮 */
         text-align: center;
-        padding: 8px;
+        padding: 10px;
         background-color: #f8f9fa;
-        border-radius: 8px;
+        border-radius: 10px;
         border: 1px solid #dee2e6;
     }
-    .ma-label { font-size: 0.8rem; font-weight: bold; color: #495057; margin-bottom: 4px; }
-    .ma-val { font-size: 1rem; font-weight: 800; }
+    .ma-label { font-size: 0.8rem; font-weight: bold; color: #666; margin-bottom: 5px; }
+    .ma-val { font-size: 1.1rem; font-weight: 800; }
+    
+    /* 顏色定義 */
     .txt-up { color: #ff4b4b; }
     .txt-down { color: #21c354; }
-
-    /* 狀態標籤 */
-    .status-badge { padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; color: white; display: inline-block; margin-top: 5px; }
+    
+    /* 狀態標籤 Badge */
+    .status-badge { 
+        padding: 4px 8px; 
+        border-radius: 6px; 
+        font-size: 0.8rem; 
+        font-weight: bold; 
+        color: white; 
+        display: inline-block; 
+        margin-top: 8px;
+    }
     .bg-red { background-color: #ff4b4b; }
     .bg-green { background-color: #21c354; }
     .bg-gray { background-color: #adb5bd; }
     .bg-blue { background-color: #0d6efd; }
 
-    /* Plotly 優化 */
+    /* Plotly */
     .js-plotly-plot .plotly .modebar { display: none !important; }
     </style>
     """, unsafe_allow_html=True)
@@ -70,7 +78,6 @@ st.markdown("""
 @st.cache_data(ttl=300)
 def get_stock_data(ticker):
     stock = yf.Ticker(ticker)
-    # 抓取 2 年資料
     df = stock.history(period="2y")
     info = stock.info
     return df, info
@@ -110,7 +117,6 @@ if ticker_input:
                     strat_desc = "🚀 小型飆股"
             
             # 2. 計算指標
-            # 均線列表
             ma_list = [5, 10, 20, 30, 60, 120, 200]
             for d in ma_list:
                 df[f'MA_{d}'] = SMAIndicator(df['Close'], window=d).sma_indicator()
@@ -136,7 +142,7 @@ if ticker_input:
             
             # --- 版面顯示 ---
             st.markdown(f"### 📱 {info.get('longName', ticker_input)} ({ticker_input})")
-            st.caption(f"目前策略：{strat_desc} (判讀依據 MA{strat_fast} vs MA{strat_slow})")
+            st.caption(f"目前策略：{strat_desc}")
 
             # 【區塊 A】基本面與價格
             c1, c2, c3, c4 = st.columns(4)
@@ -173,7 +179,7 @@ if ticker_input:
                     <div class="metric-sub">{info.get('sector','N/A')}</div>
                 </div>""", unsafe_allow_html=True)
 
-            # 【區塊 B】AI 訊號卡片 (移除多餘文字)
+            # 【區塊 B】AI 訊號卡片 (回復漂亮的卡片風格)
             st.markdown("#### 🤖 策略訊號解讀")
             k1, k2, k3, k4 = st.columns(4)
             
@@ -191,8 +197,9 @@ if ticker_input:
                 st.markdown(f"""
                 <div class="metric-card">
                     <div class="metric-title">趨勢訊號</div>
-                    <div class="metric-value" style="font-size:1.1rem; margin:10px 0;">{trend_msg}</div>
+                    <div class="metric-value">{trend_msg}</div>
                     <div><span class="status-badge {trend_bg}">MA{strat_fast} vs MA{strat_slow}</span></div>
+                    <div class="metric-sub">依據策略均線判讀</div>
                 </div>""", unsafe_allow_html=True)
             
             # 2. 量能
@@ -209,9 +216,10 @@ if ticker_input:
             with k2:
                 st.markdown(f"""
                 <div class="metric-card">
-                    <div class="metric-title">量能判讀</div>
-                    <div class="metric-value" style="font-size:1.1rem; margin:10px 0;">{vol_r:.1f} 倍均量</div>
-                    <div><span class="status-badge {v_bg}">{v_msg}</span></div>
+                    <div class="metric-title">量能判讀 (RVol)</div>
+                    <div class="metric-value">{v_msg}</div>
+                    <div><span class="status-badge {v_bg}">{vol_r:.1f} 倍</span></div>
+                    <div class="metric-sub">今日成交量 / 20日均量</div>
                 </div>""", unsafe_allow_html=True)
 
             # 3. MACD
@@ -220,9 +228,10 @@ if ticker_input:
             with k3:
                 st.markdown(f"""
                 <div class="metric-card">
-                    <div class="metric-title">MACD</div>
-                    <div class="metric-value" style="font-size:1.1rem; margin:10px 0;">{last['MACD']:.2f}</div>
-                    <div><span class="status-badge {m_bg}">{m_msg}</span></div>
+                    <div class="metric-title">MACD 趨勢</div>
+                    <div class="metric-value">{m_msg}</div>
+                    <div><span class="status-badge {m_bg}">數值: {last['MACD']:.2f}</span></div>
+                    <div class="metric-sub">紅柱多頭 / 綠柱空頭</div>
                 </div>""", unsafe_allow_html=True)
 
             # 4. RSI
@@ -235,33 +244,27 @@ if ticker_input:
             with k4:
                 st.markdown(f"""
                 <div class="metric-card">
-                    <div class="metric-title">RSI</div>
-                    <div class="metric-value" style="font-size:1.1rem; margin:10px 0;">{r_val:.1f}</div>
-                    <div><span class="status-badge {r_bg}">{r_msg}</span></div>
+                    <div class="metric-title">RSI 強弱</div>
+                    <div class="metric-value">{r_msg}</div>
+                    <div><span class="status-badge {r_bg}">數值: {r_val:.1f}</span></div>
+                    <div class="metric-sub">30-70 為合理區間</div>
                 </div>""", unsafe_allow_html=True)
 
-            # 【區塊 C】關鍵均線監控 (修復：使用 HTML 字串拼接避免錯誤)
+            # 【區塊 C】關鍵均線監控 (修復：移除縮排，避免被當成 Code Block)
             st.markdown("#### 📏 關鍵均線監控")
             
-            # 組合 HTML
-            html_content = '<div class="ma-container">'
+            # 組合 HTML (注意：這裡用字串相加，不換行，確保渲染正確)
+            ma_html_inner = ""
             for d in ma_list:
                 val = last[f'MA_{d}']
                 prev_val = prev[f'MA_{d}']
-                # 判斷箭頭與顏色
                 arrow = "▲" if val > prev_val else "▼"
                 cls = "txt-up" if val > prev_val else "txt-down"
-                
-                html_content += f"""
-                    <div class="ma-box">
-                        <div class="ma-label">MA {d}</div>
-                        <div class="ma-val {cls}">{val:.2f} {arrow}</div>
-                    </div>
-                """
-            html_content += '</div>'
-            st.markdown(html_content, unsafe_allow_html=True)
+                ma_html_inner += f'<div class="ma-box"><div class="ma-label">MA {d}</div><div class="ma-val {cls}">{val:.2f} {arrow}</div></div>'
+            
+            st.markdown(f'<div class="ma-container">{ma_html_inner}</div>', unsafe_allow_html=True)
 
-            # 【區塊 D】圖表 (1年日線, 只顯示 4 條線)
+            # 【區塊 D】圖表
             st.markdown("#### 📉 技術分析 (1年日線)")
             
             df_chart = df.tail(250) 
@@ -277,7 +280,7 @@ if ticker_input:
             # K線
             fig.add_trace(go.Candlestick(x=df_chart.index, open=df_chart['Open'], high=df_chart['High'], low=df_chart['Low'], close=df_chart['Close'], name='K線', showlegend=False), row=1, col=1)
             
-            # 四條均線 (5, 20, 60, 120)
+            # 四條均線
             fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_5'], line=dict(color='#D500F9', width=1), name='MA5 (紫)', showlegend=True), row=1, col=1)
             fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_20'], line=dict(color='#FF6D00', width=1.5), name='MA20 (橘)', showlegend=True), row=1, col=1)
             fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_60'], line=dict(color='#00C853', width=1.5), name='MA60 (綠)', showlegend=True), row=1, col=1)
