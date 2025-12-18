@@ -471,7 +471,7 @@ if ticker_input:
                 st.markdown(f"""<div class="ai-summary-card"><div class="ai-title">🤖 AI 綜合判讀報告</div><div class="ai-content">{ai_suggestion}<br><br><b>關鍵數據摘要：</b><br>• 趨勢：{trend_status}<br>• 量能：{vol_status} ({vol_r:.1f}倍)<br>• 籌碼 (MACD)：{macd_status}<br>• 強弱 (RSI)：{r_val:.1f} ({rsi_status})</div></div>""", unsafe_allow_html=True)
 
             # ==========================================
-            # 分頁 2: 交易規劃計算機 (整合 ETF/Stock 邏輯 + 雙向試算)
+            # 分頁 2: 交易規劃計算機 (修正跳頁問題版)
             # ==========================================
             with tab_calc:
                 st.markdown("#### 🧮 交易前規劃")
@@ -507,23 +507,18 @@ if ticker_input:
                     
                     bc1, bc2 = st.columns(2)
                     with bc1:
-                        budget_twd = st.number_input("台幣預算 (TWD)", value=100000, step=1000)
+                        # 加入 key 防止刷新
+                        budget_twd = st.number_input("台幣預算 (TWD)", value=100000, step=1000, key="budget_input")
                     with bc2:
-                        buy_price_input = st.number_input("預計買入價 (USD)", value=float(current_close_price), step=0.1, format="%.2f")
+                        buy_price_input = st.number_input("預計買入價 (USD)", value=float(current_close_price), step=0.1, format="%.2f", key="buy_price_input")
 
                     usd_budget = budget_twd / exchange_rate
-                    
-                    # 計算最大股數 (反推)
-                    # Total Cost = (P * Shares) + Fixed + (P * Shares * Rate)
-                    # Total Cost = P * Shares * (1 + Rate) + Fixed
-                    # Shares = (Budget - Fixed) / (P * (1 + Rate))
                     
                     if usd_budget > BUY_FIXED_FEE:
                         max_shares = (usd_budget - BUY_FIXED_FEE) / (buy_price_input * (1 + BUY_RATE_FEE))
                     else:
                         max_shares = 0
                         
-                    # 正向計算驗證成本
                     total_buy_cost_usd = (max_shares * buy_price_input * (1 + BUY_RATE_FEE)) + BUY_FIXED_FEE
                     total_buy_cost_twd = total_buy_cost_usd * exchange_rate
                     
@@ -548,35 +543,31 @@ if ticker_input:
                     
                     c_input1, c_input2 = st.columns(2)
                     with c_input1:
-                        shares_held = st.number_input("持有股數", value=10.0, step=1.0, key="calc_shares")
+                        # 加入 key
+                        shares_held = st.number_input("持有股數", value=10.0, step=1.0, key="hold_shares_input")
                     with c_input2:
-                        cost_price = st.number_input("買入成本 (USD)", value=buy_price_input, step=0.1, format="%.2f", key="calc_cost")
+                        # 加入 key
+                        cost_price = st.number_input("買入成本 (USD)", value=buy_price_input, step=0.1, format="%.2f", key="cost_price_input")
 
-                    # 計算實際買入總成本 (History Cost)
                     real_buy_cost_usd = (cost_price * shares_held * (1 + BUY_RATE_FEE)) + BUY_FIXED_FEE
                     
-                    # 損益兩平點
-                    # Net Sell = Buy Cost
-                    # (P * S * (1 - Sell_Rate)) - Sell_Fixed = Buy Cost
-                    # P = (Buy Cost + Sell_Fixed) / (S * (1 - Sell_Rate))
                     breakeven_price = (real_buy_cost_usd + SELL_FIXED_FEE) / (shares_held * (1 - SELL_RATE_FEE))
                     
                     st.caption(f"🛡️ 損益兩平價 (含手續費): **${breakeven_price:.2f}**")
 
                     st.divider()
 
-                    # 雙向模式切換
+                    # 雙向模式切換 - 這裡是最關鍵的 key！
                     calc_mode = st.radio("選擇試算目標：", 
                                        ["🎯 設定【目標獲利】反推股價", "💵 設定【賣出價格】計算獲利"], 
-                                       horizontal=True)
+                                       horizontal=True,
+                                       key="calc_mode_radio")  # <--- 加入了唯一的 key
 
                     if calc_mode == "🎯 設定【目標獲利】反推股價":
-                        target_profit_twd = st.number_input("我想賺多少台幣 (TWD)?", value=3000, step=500)
+                        # 加入 key
+                        target_profit_twd = st.number_input("我想賺多少台幣 (TWD)?", value=3000, step=500, key="target_profit_input")
                         target_profit_usd = target_profit_twd / exchange_rate
                         
-                        # 營收 - 成本 = 利潤
-                        # (P_sell * S * (1 - Sell_Rate) - Sell_Fixed) - Buy_Cost = Profit
-                        # P_sell * S * (1 - Sell_Rate) = Profit + Buy_Cost + Sell_Fixed
                         target_sell_price = (target_profit_usd + real_buy_cost_usd + SELL_FIXED_FEE) / (shares_held * (1 - SELL_RATE_FEE))
                         
                         pct_need = ((target_sell_price / cost_price) - 1) * 100
@@ -590,13 +581,11 @@ if ticker_input:
                         """, unsafe_allow_html=True)
 
                     else:
-                        target_sell_input = st.number_input("預計賣出價格 (USD)", value=float(cost_price)*1.05, step=0.1, format="%.2f")
+                        # 加入 key
+                        target_sell_input = st.number_input("預計賣出價格 (USD)", value=float(cost_price)*1.05, step=0.1, format="%.2f", key="target_sell_input")
                         
-                        # 賣出淨收入
-                        # Revenue = (P * S * (1 - Sell_Rate)) - Sell_Fixed
                         net_revenue_usd = (target_sell_input * shares_held * (1 - SELL_RATE_FEE)) - SELL_FIXED_FEE
                         
-                        # 淨利
                         net_profit_usd = net_revenue_usd - real_buy_cost_usd
                         net_profit_twd = net_profit_usd * exchange_rate
                         
