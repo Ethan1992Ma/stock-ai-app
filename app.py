@@ -151,12 +151,6 @@ st.markdown("""
         align-items: center;
         gap: 5px;
     }
-    
-    /* 調整Radio Button樣式讓它像分頁按鈕 */
-    div[role="radiogroup"] {
-        background-color: transparent;
-        border: none;
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -657,24 +651,16 @@ if ticker_input:
 
                 st.markdown("#### 📉 技術分析")
                 
-                # --- [新增] 時間區間選擇器 ---
-                st.write("##### 📅 歷史走勢區間")
-                range_col1, range_col2 = st.columns([1, 3])
-                with range_col1:
-                    chart_range = st.radio(" ", ["1個月", "3個月", "6個月", "1年"], horizontal=True, index=3, label_visibility="collapsed")
+                # --- [新增] 時間區間選擇器 (改成滑桿 1~12) ---
+                st.write("##### 📅 選擇歷史走勢長度 (月)")
+                chart_months = st.slider(" ", 1, 12, 6, label_visibility="collapsed")
                 
                 # 根據選擇切片資料
-                cutoff = df.index[-1]
-                if chart_range == "1個月":
-                    cutoff = cutoff - pd.DateOffset(months=1)
-                elif chart_range == "3個月":
-                    cutoff = cutoff - pd.DateOffset(months=3)
-                elif chart_range == "6個月":
-                    cutoff = cutoff - pd.DateOffset(months=6)
-                else:
-                    cutoff = cutoff - pd.DateOffset(years=1)
-                
+                cutoff = df.index[-1] - pd.DateOffset(months=chart_months)
                 df_chart = df[df.index >= cutoff]
+                
+                # [關鍵修正] 設定 rangebreaks 隱藏週末 (解決空格問題)
+                no_weekends = [dict(bounds=["sat", "mon"])]
                 # ----------------------------
 
                 st.markdown("<div class='chart-title'>📈 股價走勢 & 均線</div>", unsafe_allow_html=True)
@@ -691,6 +677,8 @@ if ticker_input:
                     xaxis_rangeslider_visible=False, dragmode=False, 
                     legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5)
                 )
+                # 套用移除週末設定
+                fig_price.update_xaxes(rangebreaks=no_weekends)
                 st.plotly_chart(fig_price, use_container_width=True, config={'displayModeBar': False})
 
                 st.markdown("<div class='chart-title'>📊 成交量</div>", unsafe_allow_html=True)
@@ -698,6 +686,8 @@ if ticker_input:
                 colors = ['red' if o > c else 'green' for o, c in zip(df_chart['Open'], df_chart['Close'])]
                 fig_vol.add_trace(go.Bar(x=df_chart.index, y=df_chart['Volume'], marker_color=colors, name='Volume'))
                 fig_vol.update_layout(height=250, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False)
+                # 套用移除週末設定
+                fig_vol.update_xaxes(rangebreaks=no_weekends)
                 st.plotly_chart(fig_vol, use_container_width=True, config={'displayModeBar': False})
 
                 st.markdown("<div class='chart-title'>⚡ RSI 相對強弱指標</div>", unsafe_allow_html=True)
@@ -706,6 +696,8 @@ if ticker_input:
                 fig_rsi.add_hline(y=70, line_dash="dash", line_color="red")
                 fig_rsi.add_hline(y=30, line_dash="dash", line_color="green")
                 fig_rsi.update_layout(height=250, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False)
+                # 套用移除週末設定
+                fig_rsi.update_xaxes(rangebreaks=no_weekends)
                 st.plotly_chart(fig_rsi, use_container_width=True, config={'displayModeBar': False})
 
                 st.markdown("<div class='chart-title'>🌊 MACD 趨勢指標</div>", unsafe_allow_html=True)
@@ -714,6 +706,8 @@ if ticker_input:
                 fig_macd.add_trace(go.Scatter(x=df_chart.index, y=df_chart['Signal'], line=dict(color='#FF5722', width=1), name='Signal'))
                 fig_macd.add_trace(go.Bar(x=df_chart.index, y=df_chart['Hist'], marker_color=['red' if h < 0 else 'green' for h in df_chart['Hist']], name='Hist'))
                 fig_macd.update_layout(height=250, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False)
+                # 套用移除週末設定
+                fig_macd.update_xaxes(rangebreaks=no_weekends)
                 st.plotly_chart(fig_macd, use_container_width=True, config={'displayModeBar': False})
 
                 ai_suggestion = ""
