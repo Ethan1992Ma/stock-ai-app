@@ -29,7 +29,7 @@ VOL_MA_LINE = "#000000" # 均量線 (純黑)
 # VWAP 配色
 COLOR_VWAP = "#FF9800"  # 琥珀橘
 
-# --- 2. CSS 美化 (權重修正版) ---
+# --- 2. CSS 美化 (強制亮色模式 + 強制字體黑) ---
 st.markdown(f"""
     <style>
     /* [強制亮色模式] */
@@ -44,12 +44,10 @@ st.markdown(f"""
     .stApp {{ background-color: #f8f9fa; }}
     
     /* 強制所有文字深色 (解決 iPhone Dark Mode) */
-    /* 注意：這裡不針對 span 做全域強制，以免蓋掉我們自定義的顏色 span */
-    h1, h2, h3, h4, h5, h6, p, div, label, li {{
+    h1, h2, h3, h4, h5, h6, p, div, span, label, li {{
         color: #000000 !important;
     }}
     
-    /* 輸入框文字修正 */
     .stTextInput > label, .stNumberInput > label, .stRadio > label {{
         color: #000000 !important;
     }}
@@ -77,10 +75,9 @@ st.markdown(f"""
         border: 1px solid #f0f0f0;
         position: relative;
     }}
-    /* metric-title 和 sub 保持原色設定 */
     .metric-title {{ color: #6c757d !important; font-size: 0.9rem; font-weight: 700; margin-bottom: 5px; }}
     .metric-value {{ font-size: 1.8rem; font-weight: 800; color: #212529 !important; }}
-    .metric-sub {{ font-size: 0.9rem; margin-top: 5px; }} 
+    .metric-sub {{ font-size: 0.9rem; color: #888 !important; margin-top: 5px; }}
     
     .ext-price-box {{
         background-color: #f1f3f5;
@@ -101,9 +98,9 @@ st.markdown(f"""
         transform: translateY(-50%);
         text-align: right;
         font-size: 0.7rem;
+        color: #adb5bd !important;
         line-height: 1.4;
         font-weight: 600;
-        /* 移除這裡的 color 強制，交給內部的 span 控制 */
     }}
 
     .ai-summary-card {{
@@ -180,8 +177,7 @@ st.markdown(f"""
         margin-top: 10px;
     }}
     .calc-res-title {{ font-size: 0.8rem; color: #888 !important; }}
-    /* 移除這裡的 color: #333 !important，改用 class 控制 */
-    .calc-res-val {{ font-size: 1.4rem; font-weight: bold; }}
+    .calc-res-val {{ font-size: 1.4rem; font-weight: bold; color: #333 !important; }}
     
     .fee-badge {{
         background-color: #fff3cd;
@@ -272,7 +268,7 @@ def render_calculator_tab(current_close_price, exchange_rate, quote_type):
             st.markdown(f"""
             <div class="calc-result">
                 <div class="calc-res-title">可購買股數</div>
-                <div class="calc-res-val" style="color:#0d6efd !important;">{max_shares:.2f} 股</div>
+                <div class="calc-res-val" style="color:{COLOR_UP} !important;">{max_shares:.2f} 股</div>
                 <div style="font-size:0.8rem; margin-top:5px; color:#666 !important;">
                 總成本: ${total_buy_cost_usd:.2f} USD (約 {total_buy_cost_twd:.0f} TWD)
                 </div>
@@ -555,9 +551,8 @@ if ticker_input:
 
                 reg_change = regular_price - previous_close
                 reg_pct = (reg_change / previous_close) * 100
-                # 美股：綠漲紅跌 (使用自定義色)
                 
-                # 使用 VIP class 字串來代入 HTML
+                # 使用 VIP class
                 reg_class = "txt-up-vip" if reg_change > 0 else "txt-down-vip"
 
                 if is_extended:
@@ -583,33 +578,58 @@ if ticker_input:
                             open_time = time(9, 30)
                             close_time = time(16, 0)
                         try:
+                            # 1. 先轉換時區
                             df_intra_tz = df_intra.tz_convert(tz)
                         except:
                             df_intra_tz = df_intra
 
-                        day_high = df_intra['High'].max()
-                        day_low = df_intra['Low'].min()
+                        # 2. 準備繪圖數據 (轉換成台灣時間供顯示)
+                        # 如果原本就是 Asia/Taipei 就不動，如果是美股(America/New_York)，轉成台灣時間
+                        plot_data = df_intra_tz.copy()
+                        if str(plot_data.index.tz) == 'America/New_York':
+                            plot_data.index = plot_data.index.tz_convert('Asia/Taipei')
+                        
+                        day_open_reg = df_regular['Open'].iloc[0] if 'df_regular' in locals() and not df_regular.empty else plot_data['Open'].iloc[0]
+                        day_close_reg = plot_data['Close'].iloc[-1]
+                        
+                        # Sparkline: 美股綠漲紅跌
+                        spark_color = COLOR_UP if day_close_reg >= day_open_reg else COLOR_DOWN
+                        fill_color = "rgba(5, 154, 129, 0.15)" if day_close_reg >= day_open_reg else "rgba(242, 54, 69, 0.15)"
+                        
+                        # [關鍵修改] 使用 plot_data.index (台灣時間)
+                        fig_spark.add_trace(go.Scatter(x=plot_data.index, y=plot_data['Close'], mode='lines', line=dict(color=spark_color, width=2), fill='tozeroy', fillcolor=fill_color))
+                        
+                        if 'VWAP' in plot_data.columns:
+                            fig_spark.add_trace(go.Scatter(x=plot_data.index, y=plot_data['VWAP'], mode='lines', line=dict(color=COLOR_VWAP, width=1), hoverinfo='skip'))
+
+                        # 計算 H/L
+                        day_high = plot_data['High'].max()
+                        day_low = plot_data['Low'].min()
                         day_high_pct = ((day_high - previous_close) / previous_close) * 100
                         day_low_pct = ((day_low - previous_close) / previous_close) * 100
 
-                        fig_spark.add_trace(go.Scatter(x=df_intra.index, y=df_intra['Close'], mode='lines', line=dict(color='#bdc3c7', width=1.5, dash='dot'), hoverinfo='skip'))
-                        
-                        mask = (df_intra_tz.index.time >= open_time) & (df_intra_tz.index.time <= close_time)
-                        df_regular = df_intra[mask]
-                        if not df_regular.empty:
-                            day_open_reg = df_regular['Open'].iloc[0]
-                            day_close_reg = df_regular['Close'].iloc[-1]
-                            spark_color = COLOR_UP if day_close_reg >= day_open_reg else COLOR_DOWN
-                            fill_color = "rgba(5, 154, 129, 0.15)" if day_close_reg >= day_open_reg else "rgba(242, 54, 69, 0.15)"
-                            
-                            fig_spark.add_trace(go.Scatter(x=df_regular.index, y=df_regular['Close'], mode='lines', line=dict(color=spark_color, width=2), fill='tozeroy', fillcolor=fill_color))
-                            
-                            if 'VWAP' in df_regular.columns:
-                                fig_spark.add_trace(go.Scatter(x=df_regular.index, y=df_regular['VWAP'], mode='lines', line=dict(color=COLOR_VWAP, width=1), hoverinfo='skip'))
-
                         y_min = day_low * 0.999
                         y_max = day_high * 1.001
-                        fig_spark.update_layout(height=80, margin=dict(l=0, r=40, t=5, b=5), xaxis=dict(visible=False), yaxis=dict(visible=False, range=[y_min, y_max]), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False, dragmode=False)
+                        
+                        # [新增] X軸設定：顯示時間、24h制、6小時一格、黑色小字
+                        fig_spark.update_layout(
+                            height=100, # 稍微加高一點給 X 軸空間
+                            margin=dict(l=0, r=40, t=5, b=20), # b=20 給 X 軸標籤
+                            paper_bgcolor='rgba(0,0,0,0)', 
+                            plot_bgcolor='rgba(0,0,0,0)', 
+                            showlegend=False, 
+                            dragmode=False,
+                            xaxis=dict(
+                                visible=True,
+                                tickformat="%H:%M",
+                                dtick=21600000, # 6 hours in ms
+                                tickfont=dict(size=10, color='#000000'),
+                                showgrid=False,
+                                showline=False,
+                                zeroline=False
+                            ),
+                            yaxis=dict(visible=False, range=[y_min, y_max])
+                        )
                         
                         # [修正] 使用 VIP Class
                         price_html = f"""<div class="metric-card"><div class="metric-title">最新股價</div><div class="metric-value {reg_class}">{regular_price:.2f}</div><div class="metric-sub {reg_class}">{('+' if reg_change > 0 else '')}{reg_change:.2f} ({reg_pct:.2f}%)</div>"""
