@@ -9,12 +9,11 @@ from datetime import time
 # --- 1. 網頁設定 ---
 st.set_page_config(page_title="AI 智能操盤戰情室", layout="wide", initial_sidebar_state="collapsed")
 
-# --- 2. CSS 美化 (維持你原本的風格，並增加計算機需要的樣式) ---
+# --- 2. CSS 美化 ---
 st.markdown("""
     <style>
     .stApp { background-color: #f8f9fa; }
     
-    /* 調整標題與圖表的間距 */
     .chart-title {
         font-size: 1.1rem;
         font-weight: 700;
@@ -114,7 +113,7 @@ st.markdown("""
 
     .js-plotly-plot .plotly .modebar { display: none !important; }
 
-    /* 計算機專用樣式 (手機優化) */
+    /* 計算機專用樣式 */
     .calc-box {
         background-color: #ffffff;
         padding: 15px;
@@ -139,6 +138,20 @@ st.markdown("""
     }
     .calc-res-title { font-size: 0.8rem; color: #888; }
     .calc-res-val { font-size: 1.4rem; font-weight: bold; color: #333; }
+    
+    /* 費率標籤樣式 */
+    .fee-badge {
+        background-color: #fff3cd;
+        color: #856404;
+        padding: 5px 10px;
+        border-radius: 5px;
+        font-size: 0.8rem;
+        border: 1px solid #ffeeba;
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -149,17 +162,18 @@ def get_stock_data(ticker):
     df = stock.history(period="2y")
     df_intra = stock.history(period="1d", interval="5m", prepost=True)
     info = stock.info
-    return df, df_intra, info
+    # 抓取資產類型，例如 'EQUITY' 或 'ETF'
+    quote_type = info.get('quoteType', 'EQUITY')
+    return df, df_intra, info, quote_type
 
-@st.cache_data(ttl=3600) # 匯率不用太常抓
+@st.cache_data(ttl=3600)
 def get_exchange_rate():
     try:
-        # 抓取 USDTWD=X
         fx = yf.Ticker("USDTWD=X")
         hist = fx.history(period="1d")
         if not hist.empty:
             return hist['Close'].iloc[-1]
-        return 32.5 # 預設值
+        return 32.5
     except:
         return 32.5
 
@@ -183,12 +197,12 @@ with st.sidebar:
 # --- 5. 主程式 ---
 if ticker_input:
     try:
-        df, df_intra, info = get_stock_data(ticker_input)
+        df, df_intra, info, quote_type = get_stock_data(ticker_input)
         exchange_rate = get_exchange_rate()
         
         if not df.empty and len(df) > 200:
             
-            # --- A. 先計算所有指標 (維持不變) ---
+            # --- A. 指標計算 ---
             if strategy_mode == "🤖 自動判別 (Auto)":
                 mcap = info.get('marketCap', 0)
                 if mcap > 200_000_000_000:
@@ -212,25 +226,22 @@ if ticker_input:
             df['Hist'] = macd.macd_diff() 
             df['Vol_MA'] = SMAIndicator(df['Volume'], window=20).sma_indicator()
 
-            # --- B. 定義 last ---
             last = df.iloc[-1]
             prev = df.iloc[-2]
-            current_close_price = last['Close'] # 存起來給計算機用
+            current_close_price = last['Close']
 
-            # --- 建立 Tabs 分頁結構 ---
+            # --- 建立 Tabs 分頁 ---
             tab_analysis, tab_calc, tab_inv = st.tabs(["📊 技術分析", "🧮 交易計算", "📦 庫存管理"])
 
             # ==========================================
-            # 分頁 1: 原本的技術分析 (邏輯完全保留，只縮排進入 tab)
+            # 分頁 1: 技術分析 (內容不變)
             # ==========================================
             with tab_analysis:
-                # --- C. VWAP ---
                 if not df_intra.empty:
                     df_intra['Cum_Vol'] = df_intra['Volume'].cumsum()
                     df_intra['Cum_Vol_Price'] = (df_intra['Close'] * df_intra['Volume']).cumsum()
                     df_intra['VWAP'] = df_intra['Cum_Vol_Price'] / df_intra['Cum_Vol']
 
-                # --- D. 價格顯示 ---
                 live_price = df_intra['Close'].iloc[-1] if not df_intra.empty else 0
                 regular_price = info.get('currentPrice', info.get('regularMarketPrice', last['Close']))
                 previous_close = info.get('previousClose', prev['Close'])
@@ -263,11 +274,9 @@ if ticker_input:
                     ext_pct = (ext_change / regular_price) * 100
                     ext_color = "#ff4b4b" if ext_change > 0 else "#21c354"
 
-                # --- E. 版面顯示 ---
                 st.markdown(f"### 📱 {info.get('longName', ticker_input)} ({ticker_input})")
                 st.caption(f"目前策略：{strat_desc}")
 
-                # 【區塊 A】基本面與價格
                 c1, c2, c3, c4 = st.columns(4)
                 with c1:
                     fig_spark = go.Figure()
@@ -330,7 +339,6 @@ if ticker_input:
                     m_str = f"{mcap/1000000000:.1f}B" if mcap > 1000000000 else f"{mcap/1000000:.1f}M"
                     st.markdown(f"""<div class="metric-card"><div class="metric-title">市值</div><div class="metric-value">{m_str}</div><div class="metric-sub">{info.get('sector','N/A')}</div></div>""", unsafe_allow_html=True)
 
-                # 【區塊 B】AI 訊號
                 st.markdown("#### 🤖 策略訊號解讀")
                 k1, k2, k3, k4 = st.columns(4)
                 
@@ -339,7 +347,6 @@ if ticker_input:
                 vol_status = "一般"
                 macd_status = "不明"
 
-                # 訊號判讀
                 trend_msg = "💤 睡覺行情 (盤整)"
                 trend_bg = "bg-gray"
                 trend_desc = "多空不明，建議觀望"
@@ -391,7 +398,6 @@ if ticker_input:
                 with k4:
                     st.markdown(f"""<div class="metric-card"><div class="metric-title">RSI 強弱</div><div class="metric-value" style="font-size:1.3rem;">{r_msg}</div><div><span class="status-badge {r_bg}">數值: {r_val:.1f}</span></div><div class="metric-sub">乖離率判斷</div></div>""", unsafe_allow_html=True)
 
-                # 【區塊 C】關鍵均線監控
                 st.markdown("#### 📏 關鍵均線監控")
                 ma_html_inner = ""
                 for d in ma_list:
@@ -402,11 +408,9 @@ if ticker_input:
                     ma_html_inner += f'<div class="ma-box"><div class="ma-label">MA {d}</div><div class="ma-val {cls}">{val:.2f} {arrow}</div></div>'
                 st.markdown(f'<div class="ma-container">{ma_html_inner}</div>', unsafe_allow_html=True)
 
-                # 【區塊 D】圖表 (標題外部化 + 圖例下移)
                 st.markdown("#### 📉 技術分析")
                 df_chart = df.tail(250) 
                 
-                # 1. 價格
                 st.markdown("<div class='chart-title'>📈 股價走勢 & 均線 (1年)</div>", unsafe_allow_html=True)
                 fig_price = go.Figure()
                 fig_price.add_trace(go.Candlestick(x=df_chart.index, open=df_chart['Open'], high=df_chart['High'], low=df_chart['Low'], close=df_chart['Close'], name='K線', showlegend=False))
@@ -416,14 +420,13 @@ if ticker_input:
                 fig_price.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_120'], line=dict(color='#78909C', width=1.5, dash='dot'), name='MA120', showlegend=True))
                 fig_price.update_layout(
                     height=400, 
-                    margin=dict(l=10, r=10, t=10, b=100), # 上留白小，下留白給圖例
+                    margin=dict(l=10, r=10, t=10, b=100),
                     paper_bgcolor='white', plot_bgcolor='white', 
                     xaxis_rangeslider_visible=False, dragmode=False, 
-                    legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5) # 圖例徹底移到下方
+                    legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5)
                 )
                 st.plotly_chart(fig_price, use_container_width=True, config={'displayModeBar': False})
 
-                # 2. 成交量
                 st.markdown("<div class='chart-title'>📊 成交量</div>", unsafe_allow_html=True)
                 fig_vol = go.Figure()
                 colors = ['red' if o > c else 'green' for o, c in zip(df_chart['Open'], df_chart['Close'])]
@@ -431,7 +434,6 @@ if ticker_input:
                 fig_vol.update_layout(height=250, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False)
                 st.plotly_chart(fig_vol, use_container_width=True, config={'displayModeBar': False})
 
-                # 3. RSI
                 st.markdown("<div class='chart-title'>⚡ RSI 相對強弱指標</div>", unsafe_allow_html=True)
                 fig_rsi = go.Figure()
                 fig_rsi.add_trace(go.Scatter(x=df_chart.index, y=df_chart['RSI'], line=dict(color='#9C27B0', width=2), name='RSI'))
@@ -440,7 +442,6 @@ if ticker_input:
                 fig_rsi.update_layout(height=250, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False)
                 st.plotly_chart(fig_rsi, use_container_width=True, config={'displayModeBar': False})
 
-                # 4. MACD
                 st.markdown("<div class='chart-title'>🌊 MACD 趨勢指標</div>", unsafe_allow_html=True)
                 fig_macd = go.Figure()
                 fig_macd.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MACD'], line=dict(color='#2196F3', width=1), name='MACD'))
@@ -449,7 +450,6 @@ if ticker_input:
                 fig_macd.update_layout(height=250, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False)
                 st.plotly_chart(fig_macd, use_container_width=True, config={'displayModeBar': False})
 
-                # 【區塊 E】AI 綜合判讀
                 ai_suggestion = ""
                 if trend_status == "多頭":
                     ai_suggestion += f"目前 {ticker_input} 呈現多頭排列，均線向上發散，顯示買盤力道強勁。"
@@ -471,19 +471,37 @@ if ticker_input:
                 st.markdown(f"""<div class="ai-summary-card"><div class="ai-title">🤖 AI 綜合判讀報告</div><div class="ai-content">{ai_suggestion}<br><br><b>關鍵數據摘要：</b><br>• 趨勢：{trend_status}<br>• 量能：{vol_status} ({vol_r:.1f}倍)<br>• 籌碼 (MACD)：{macd_status}<br>• 強弱 (RSI)：{r_val:.1f} ({rsi_status})</div></div>""", unsafe_allow_html=True)
 
             # ==========================================
-            # 分頁 2: 交易規劃計算機 (手機優化 - 雙向試算版)
+            # 分頁 2: 交易規劃計算機 (整合 ETF/Stock 邏輯 + 雙向試算)
             # ==========================================
             with tab_calc:
                 st.markdown("#### 🧮 交易前規劃")
                 
-                # 手續費常數
-                FEE_PER_TX = 3.0
-                SELLING_TAX = 0.00278
+                # --- 自動判斷費率 ---
+                SEC_FEE_RATE = 0.0000278 # SEC 規費 (固定)
+                
+                if quote_type == 'ETF':
+                    # ETF 規則: 買賣各 3 美金
+                    BUY_FIXED_FEE = 3.0
+                    BUY_RATE_FEE = 0.0
+                    
+                    SELL_FIXED_FEE = 3.0
+                    SELL_RATE_FEE = SEC_FEE_RATE # 只收 SEC，沒有 Broker %
+                    
+                    fee_badge_text = "💡 檢測為 **ETF**：套用固定手續費 **$3 USD**"
+                else:
+                    # 股票 規則: 0.1% (無最低)
+                    BUY_FIXED_FEE = 0.0
+                    BUY_RATE_FEE = 0.001 # 0.1%
+                    
+                    SELL_FIXED_FEE = 0.0
+                    SELL_RATE_FEE = 0.001 + SEC_FEE_RATE # 0.1% + SEC
+                    
+                    fee_badge_text = "💡 檢測為 **一般股票**：套用費率 **0.1%**"
 
-                # 顯示匯率資訊
-                st.info(f"💡 目前美金匯率參考：**1 USD ≈ {exchange_rate:.2f} TWD**")
+                st.markdown(f'<div class="fee-badge">{fee_badge_text}</div>', unsafe_allow_html=True)
+                st.info(f"💰 目前匯率參考：**1 USD ≈ {exchange_rate:.2f} TWD**")
 
-                # --- 1. 購買力試算 (維持不變) ---
+                # --- 1. 購買力試算 ---
                 with st.container():
                     st.markdown('<div class="calc-header">💰 預算試算 (我有多少錢?)</div>', unsafe_allow_html=True)
                     
@@ -491,22 +509,31 @@ if ticker_input:
                     with bc1:
                         budget_twd = st.number_input("台幣預算 (TWD)", value=100000, step=1000)
                     with bc2:
-                        # 這裡預設帶入 current_close_price
                         buy_price_input = st.number_input("預計買入價 (USD)", value=float(current_close_price), step=0.1, format="%.2f")
 
                     usd_budget = budget_twd / exchange_rate
-                    available_usd = usd_budget - FEE_PER_TX
-                    max_shares = available_usd / buy_price_input if buy_price_input > 0 else 0
-                    total_cost_usd = (max_shares * buy_price_input) + FEE_PER_TX
-                    total_cost_twd = total_cost_usd * exchange_rate
                     
-                    if available_usd > 0:
+                    # 計算最大股數 (反推)
+                    # Total Cost = (P * Shares) + Fixed + (P * Shares * Rate)
+                    # Total Cost = P * Shares * (1 + Rate) + Fixed
+                    # Shares = (Budget - Fixed) / (P * (1 + Rate))
+                    
+                    if usd_budget > BUY_FIXED_FEE:
+                        max_shares = (usd_budget - BUY_FIXED_FEE) / (buy_price_input * (1 + BUY_RATE_FEE))
+                    else:
+                        max_shares = 0
+                        
+                    # 正向計算驗證成本
+                    total_buy_cost_usd = (max_shares * buy_price_input * (1 + BUY_RATE_FEE)) + BUY_FIXED_FEE
+                    total_buy_cost_twd = total_buy_cost_usd * exchange_rate
+                    
+                    if max_shares > 0:
                         st.markdown(f"""
                         <div class="calc-result">
                             <div class="calc-res-title">可購買股數</div>
                             <div class="calc-res-val" style="color:#0d6efd">{max_shares:.2f} 股</div>
                             <div style="font-size:0.8rem; margin-top:5px; color:#666">
-                            總成本: ${total_cost_usd:.2f} USD (約 {total_cost_twd:.0f} TWD)
+                            總成本: ${total_buy_cost_usd:.2f} USD (約 {total_buy_cost_twd:.0f} TWD)
                             </div>
                         </div>
                         """, unsafe_allow_html=True)
@@ -519,35 +546,39 @@ if ticker_input:
                 with st.container():
                     st.markdown('<div class="calc-header">⚖️ 賣出試算 (獲利預估)</div>', unsafe_allow_html=True)
                     
-                    # 步驟 A: 輸入持有成本
                     c_input1, c_input2 = st.columns(2)
                     with c_input1:
                         shares_held = st.number_input("持有股數", value=10.0, step=1.0, key="calc_shares")
                     with c_input2:
-                        # 預設帶入上面的買入價，方便連貫操作
                         cost_price = st.number_input("買入成本 (USD)", value=buy_price_input, step=0.1, format="%.2f", key="calc_cost")
 
-                    # 計算總成本 (包含買入手續費)
-                    total_cost_usd_real = (cost_price * shares_held) + FEE_PER_TX
+                    # 計算實際買入總成本 (History Cost)
+                    real_buy_cost_usd = (cost_price * shares_held * (1 + BUY_RATE_FEE)) + BUY_FIXED_FEE
                     
-                    # 顯示損益兩平點 (這是固定資訊，隨時都要看)
-                    breakeven_price = (total_cost_usd_real + FEE_PER_TX) / (shares_held * (1 - SELLING_TAX))
-                    st.caption(f"🛡️ 損益兩平價 (不賠錢的賣點): **${breakeven_price:.2f}**")
+                    # 損益兩平點
+                    # Net Sell = Buy Cost
+                    # (P * S * (1 - Sell_Rate)) - Sell_Fixed = Buy Cost
+                    # P = (Buy Cost + Sell_Fixed) / (S * (1 - Sell_Rate))
+                    breakeven_price = (real_buy_cost_usd + SELL_FIXED_FEE) / (shares_held * (1 - SELL_RATE_FEE))
+                    
+                    st.caption(f"🛡️ 損益兩平價 (含手續費): **${breakeven_price:.2f}**")
 
                     st.divider()
 
-                    # 步驟 B: 選擇試算模式
+                    # 雙向模式切換
                     calc_mode = st.radio("選擇試算目標：", 
                                        ["🎯 設定【目標獲利】反推股價", "💵 設定【賣出價格】計算獲利"], 
                                        horizontal=True)
 
                     if calc_mode == "🎯 設定【目標獲利】反推股價":
-                        # --- 模式 1: 用想賺多少錢 -> 算賣價 ---
                         target_profit_twd = st.number_input("我想賺多少台幣 (TWD)?", value=3000, step=500)
-                        
                         target_profit_usd = target_profit_twd / exchange_rate
-                        # 公式: 營收 - 成本 = 利潤
-                        target_sell_price = (total_cost_usd_real + target_profit_usd + FEE_PER_TX) / (shares_held * (1 - SELLING_TAX))
+                        
+                        # 營收 - 成本 = 利潤
+                        # (P_sell * S * (1 - Sell_Rate) - Sell_Fixed) - Buy_Cost = Profit
+                        # P_sell * S * (1 - Sell_Rate) = Profit + Buy_Cost + Sell_Fixed
+                        target_sell_price = (target_profit_usd + real_buy_cost_usd + SELL_FIXED_FEE) / (shares_held * (1 - SELL_RATE_FEE))
+                        
                         pct_need = ((target_sell_price / cost_price) - 1) * 100
                         
                         st.markdown(f"""
@@ -559,19 +590,16 @@ if ticker_input:
                         """, unsafe_allow_html=True)
 
                     else:
-                        # --- 模式 2: 用想賣多少錢 -> 算獲利 ---
                         target_sell_input = st.number_input("預計賣出價格 (USD)", value=float(cost_price)*1.05, step=0.1, format="%.2f")
                         
-                        # 計算賣出總營收
-                        gross_revenue = target_sell_input * shares_held
-                        # 扣掉賣出稅與手續費
-                        net_revenue = gross_revenue - (gross_revenue * SELLING_TAX) - FEE_PER_TX
-                        # 淨利 (USD)
-                        net_profit_usd = net_revenue - total_cost_usd_real
-                        # 淨利 (TWD)
+                        # 賣出淨收入
+                        # Revenue = (P * S * (1 - Sell_Rate)) - Sell_Fixed
+                        net_revenue_usd = (target_sell_input * shares_held * (1 - SELL_RATE_FEE)) - SELL_FIXED_FEE
+                        
+                        # 淨利
+                        net_profit_usd = net_revenue_usd - real_buy_cost_usd
                         net_profit_twd = net_profit_usd * exchange_rate
                         
-                        # 顏色邏輯：賺錢紅，賠錢綠
                         res_color = "#ff4b4b" if net_profit_twd >= 0 else "#21c354"
                         res_prefix = "+" if net_profit_twd >= 0 else ""
 
@@ -586,18 +614,22 @@ if ticker_input:
                         """, unsafe_allow_html=True)
 
             # ==========================================
-            # 分頁 3: 庫存管理 (手機優化)
+            # 分頁 3: 庫存管理 (同樣套用新費率邏輯)
             # ==========================================
             with tab_inv:
                 st.markdown("#### 📦 庫存損益與加碼攤平")
                 
-                # 輸入區
+                # 再次顯示費率提示
+                st.caption(f"{fee_badge_text}")
+
                 with st.container():
                     ic1, ic2 = st.columns(2)
                     with ic1:
                         st.caption("📍 目前持倉")
                         curr_shares = st.number_input("目前股數", value=100.0)
-                        curr_avg_cost = st.number_input("平均成本 (USD)", value=float(current_close_price)*1.1) # 預設比現價高一點模擬虧損
+                        # 這裡假設使用者輸入的是「平均買入價格」，而不是「已含手續費的成本」
+                        # 為了簡化，我們通常用平均成交價來算
+                        curr_avg_price = st.number_input("平均成交價 (USD)", value=float(current_close_price)*1.1)
                     with ic2:
                         st.caption("➕ 預計加碼")
                         new_shares = st.number_input("加碼股數", value=50.0)
@@ -605,26 +637,39 @@ if ticker_input:
                 
                 st.markdown("---")
 
-                # 計算邏輯
+                # 計算邏輯 (使用「成交價」加權平均)
                 total_shares = curr_shares + new_shares
-                total_cost_old = curr_shares * curr_avg_cost
-                total_cost_new = new_shares * new_buy_price
-                new_avg_cost = (total_cost_old + total_cost_new) / total_shares
                 
-                # 預估損益 (以目前輸入的加碼價當作現價來估算)
-                market_value = total_shares * new_buy_price
-                total_invested = total_cost_old + total_cost_new
-                unrealized_pl = market_value - total_invested
+                # 舊倉總值 (原始本金)
+                cost_old = curr_shares * curr_avg_price
+                # 新倉總值
+                cost_new = new_shares * new_buy_price
+                
+                new_avg_price = (cost_old + cost_new) / total_shares
+                
+                # 預估損益 (包含手續費)
+                # 總投入成本 (含買入手續費)
+                # Old Cost w/ Fee
+                cost_old_w_fee = (curr_shares * curr_avg_price * (1 + BUY_RATE_FEE)) + (BUY_FIXED_FEE if curr_shares > 0 else 0)
+                # New Cost w/ Fee
+                cost_new_w_fee = (new_shares * new_buy_price * (1 + BUY_RATE_FEE)) + (BUY_FIXED_FEE if new_shares > 0 else 0)
+                
+                total_invested_real = cost_old_w_fee + cost_new_w_fee
+
+                # 假設現在全部賣掉的淨值 (以加碼價 new_buy_price 估算市值)
+                market_val_gross = total_shares * new_buy_price
+                market_val_net = (market_val_gross * (1 - SELL_RATE_FEE)) - (SELL_FIXED_FEE if total_shares > 0 else 0)
+                
+                unrealized_pl = market_val_net - total_invested_real
                 pl_color = "#ff4b4b" if unrealized_pl >= 0 else "#21c354"
 
-                # 結果顯示區 (大卡片)
                 st.markdown(f"""
                 <div class="metric-card">
-                    <div class="metric-title">加碼後平均成本</div>
+                    <div class="metric-title">加碼後平均成交價</div>
                     <div style="display:flex; justify-content:space-between; align-items:end;">
-                        <div class="metric-value">${new_avg_cost:.2f}</div>
-                        <div style="color:{'#21c354' if new_avg_cost < curr_avg_cost else '#888'}; font-weight:bold;">
-                           {f'⬇ 下降 ${curr_avg_cost - new_avg_cost:.2f}' if new_avg_cost < curr_avg_cost else '變動不大'}
+                        <div class="metric-value">${new_avg_price:.2f}</div>
+                        <div style="color:{'#21c354' if new_avg_price < curr_avg_price else '#888'}; font-weight:bold;">
+                           {f'⬇ 下降 ${curr_avg_price - new_avg_price:.2f}' if new_avg_price < curr_avg_price else '變動不大'}
                         </div>
                     </div>
                 </div>
@@ -641,7 +686,7 @@ if ticker_input:
                 with c_res2:
                     st.markdown(f"""
                     <div class="calc-result">
-                        <div class="calc-res-title">預估總損益</div>
+                        <div class="calc-res-title">預估總損益 (含費)</div>
                         <div class="calc-res-val" style="color:{pl_color}">${unrealized_pl:.2f}</div>
                     </div>
                     """, unsafe_allow_html=True)
