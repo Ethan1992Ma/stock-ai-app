@@ -7,23 +7,40 @@ from ta.momentum import RSIIndicator
 from datetime import time
 
 # --- 1. 網頁設定 ---
-st.set_page_config(page_title="AI 智能操盤戰情室", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="AI 智能操盤戰情室 (美股版)", layout="wide", initial_sidebar_state="collapsed")
+
+# --- 定義全域配色常數 (美股風格：綠漲紅跌) ---
+COLOR_UP = "#248888"      # 上漲/獲利/多頭 (綠)
+COLOR_DOWN = "#E7475E"    # 下跌/虧損/空頭 (紅)
+COLOR_NEUTRAL = "#adb5bd" # 中性
+
+# MACD 客製化配色
+MACD_BULL_GROW = "#2db09c" # 深綠
+MACD_BULL_SHRINK = "#a8e0d1" # 淺綠
+MACD_BEAR_GROW = "#ff6666" # 深紅
+MACD_BEAR_SHRINK = "#ffcccc" # 淺紅
+
+# 成交量客製化配色
+VOL_EXPLODE = "#FF8A80" # 爆量
+VOL_NORMAL = "#FFD180"  # 正常
+VOL_SHRINK = "#FFFF8D"  # 量縮
+VOL_MA_LINE = "#CFD8DC" # 均量線
 
 # --- 2. CSS 美化 ---
-st.markdown("""
+st.markdown(f"""
     <style>
-    .stApp { background-color: #f8f9fa; }
+    .stApp {{ background-color: #f8f9fa; }}
     
-    .chart-title {
+    .chart-title {{
         font-size: 1.1rem;
         font-weight: 700;
         color: #333;
         margin-top: 10px;
         margin-bottom: 0px; 
         padding-left: 5px;
-    }
+    }}
 
-    .metric-card {
+    .metric-card {{
         background-color: #ffffff;
         padding: 20px;
         border-radius: 15px;
@@ -31,12 +48,12 @@ st.markdown("""
         margin-bottom: 10px;
         border: 1px solid #f0f0f0;
         position: relative;
-    }
-    .metric-title { color: #6c757d; font-size: 0.9rem; font-weight: 700; margin-bottom: 5px; }
-    .metric-value { font-size: 1.8rem; font-weight: 800; color: #212529; }
-    .metric-sub { font-size: 0.9rem; color: #888; margin-top: 5px; }
+    }}
+    .metric-title {{ color: #6c757d; font-size: 0.9rem; font-weight: 700; margin-bottom: 5px; }}
+    .metric-value {{ font-size: 1.8rem; font-weight: 800; color: #212529; }}
+    .metric-sub {{ font-size: 0.9rem; color: #888; margin-top: 5px; }}
     
-    .ext-price-box {
+    .ext-price-box {{
         background-color: #f1f3f5;
         padding: 4px 8px;
         border-radius: 6px;
@@ -45,10 +62,10 @@ st.markdown("""
         color: #666;
         margin-top: 8px;
         display: inline-block;
-    }
-    .ext-label { font-size: 0.75rem; color: #999; margin-right: 5px; }
+    }}
+    .ext-label {{ font-size: 0.75rem; color: #999; margin-right: 5px; }}
 
-    .spark-scale {
+    .spark-scale {{
         position: absolute;
         right: 15px;
         top: 55%;
@@ -58,9 +75,9 @@ st.markdown("""
         color: #adb5bd;
         line-height: 1.4;
         font-weight: 600;
-    }
+    }}
 
-    .ai-summary-card {
+    .ai-summary-card {{
         background-color: #e3f2fd;
         padding: 20px;
         border-radius: 15px;
@@ -68,11 +85,11 @@ st.markdown("""
         margin-top: 20px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         margin-bottom: 20px;
-    }
-    .ai-title { font-weight: bold; font-size: 1.2rem; color: #0d47a1; margin-bottom: 10px; display: flex; align-items: center; }
-    .ai-content { font-size: 1rem; color: #333; line-height: 1.6; }
+    }}
+    .ai-title {{ font-weight: bold; font-size: 1.2rem; color: #0d47a1; margin-bottom: 10px; display: flex; align-items: center; }}
+    .ai-content {{ font-size: 1rem; color: #333; line-height: 1.6; }}
 
-    .ma-container {
+    .ma-container {{
         display: flex;
         flex-wrap: wrap;
         gap: 10px;
@@ -82,22 +99,23 @@ st.markdown("""
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         border: 1px solid #f0f0f0;
         margin-bottom: 20px;
-    }
-    .ma-box {
+    }}
+    .ma-box {{
         flex: 1 1 100px;
         text-align: center;
         padding: 10px;
         background-color: #f8f9fa;
         border-radius: 10px;
         border: 1px solid #dee2e6;
-    }
-    .ma-label { font-size: 0.8rem; font-weight: bold; color: #666; margin-bottom: 5px; }
-    .ma-val { font-size: 1.1rem; font-weight: 800; }
+    }}
+    .ma-label {{ font-size: 0.8rem; font-weight: bold; color: #666; margin-bottom: 5px; }}
+    .ma-val {{ font-size: 1.1rem; font-weight: 800; }}
     
-    .txt-up { color: #ff4b4b; }
-    .txt-down { color: #21c354; }
+    /* 動態顏色類別 */
+    .txt-up {{ color: {COLOR_UP}; }}
+    .txt-down {{ color: {COLOR_DOWN}; }}
     
-    .status-badge { 
+    .status-badge {{ 
         padding: 4px 8px; 
         border-radius: 6px; 
         font-size: 0.85rem; 
@@ -105,41 +123,42 @@ st.markdown("""
         color: white; 
         display: inline-block; 
         margin-top: 8px;
-    }
-    .bg-red { background-color: #ff4b4b; }
-    .bg-green { background-color: #21c354; }
-    .bg-gray { background-color: #adb5bd; }
-    .bg-blue { background-color: #0d6efd; }
+    }}
+    
+    /* 背景色也更新為美股邏輯 */
+    .bg-up {{ background-color: {COLOR_UP}; }}
+    .bg-down {{ background-color: {COLOR_DOWN}; }}
+    .bg-gray {{ background-color: {COLOR_NEUTRAL}; }}
+    .bg-blue {{ background-color: #0d6efd; }}
 
-    .js-plotly-plot .plotly .modebar { display: none !important; }
+    .js-plotly-plot .plotly .modebar {{ display: none !important; }}
 
-    /* 計算機專用樣式 */
-    .calc-box {
+    .calc-box {{
         background-color: #ffffff;
         padding: 15px;
         border-radius: 12px;
         border: 1px solid #eee;
         margin-bottom: 15px;
-    }
-    .calc-header {
+    }}
+    .calc-header {{
         font-size: 1rem;
         font-weight: bold;
         color: #444;
         margin-bottom: 10px;
-        border-left: 4px solid #ff4b4b;
+        border-left: 4px solid {COLOR_UP}; /* 使用上漲色 */
         padding-left: 8px;
-    }
-    .calc-result {
+    }}
+    .calc-result {{
         background-color: #f8f9fa;
         padding: 10px;
         border-radius: 8px;
         text-align: center;
         margin-top: 10px;
-    }
-    .calc-res-title { font-size: 0.8rem; color: #888; }
-    .calc-res-val { font-size: 1.4rem; font-weight: bold; color: #333; }
+    }}
+    .calc-res-title {{ font-size: 0.8rem; color: #888; }}
+    .calc-res-val {{ font-size: 1.4rem; font-weight: bold; color: #333; }}
     
-    .fee-badge {
+    .fee-badge {{
         background-color: #fff3cd;
         color: #856404;
         padding: 5px 10px;
@@ -150,7 +169,12 @@ st.markdown("""
         display: flex;
         align-items: center;
         gap: 5px;
-    }
+    }}
+    
+    div[role="radiogroup"] {{
+        background-color: transparent;
+        border: none;
+    }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -271,8 +295,8 @@ def render_calculator_tab(current_close_price, exchange_rate, quote_type):
             st.markdown(f"""
             <div class="calc-result">
                 <div class="calc-res-title">建議掛單賣出價</div>
-                <div class="calc-res-val" style="color:#ff4b4b">${target_sell_price:.2f}</div>
-                <div style="font-size:0.8rem; color:#ff4b4b">需上漲 {pct_need:.1f}%</div>
+                <div class="calc-res-val" style="color:{COLOR_UP}">${target_sell_price:.2f}</div>
+                <div style="font-size:0.8rem; color:{COLOR_UP}">需上漲 {pct_need:.1f}%</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -287,7 +311,8 @@ def render_calculator_tab(current_close_price, exchange_rate, quote_type):
             net_profit_usd = net_revenue_usd - real_buy_cost_usd
             net_profit_twd = net_profit_usd * exchange_rate
             
-            res_color = "#ff4b4b" if net_profit_twd >= 0 else "#21c354"
+            # 美股邏輯：獲利=綠色(Up)，虧損=紅色(Down)
+            res_color = COLOR_UP if net_profit_twd >= 0 else COLOR_DOWN
             res_prefix = "+" if net_profit_twd >= 0 else ""
 
             st.markdown(f"""
@@ -353,14 +378,15 @@ def render_inventory_tab(current_close_price, quote_type):
     market_val_net = (market_val_gross * (1 - SELL_RATE_FEE)) - (SELL_FIXED_FEE if total_shares > 0 else 0)
     
     unrealized_pl = market_val_net - total_invested_real
-    pl_color = "#ff4b4b" if unrealized_pl >= 0 else "#21c354"
+    # 獲利=綠色(Up)，虧損=紅色(Down)
+    pl_color = COLOR_UP if unrealized_pl >= 0 else COLOR_DOWN
 
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-title">加碼後平均成交價</div>
         <div style="display:flex; justify-content:space-between; align-items:end;">
             <div class="metric-value">${new_avg_price:.2f}</div>
-            <div style="color:{'#21c354' if new_avg_price < curr_avg_price else '#888'}; font-weight:bold;">
+            <div style="color:{COLOR_UP if new_avg_price < curr_avg_price else '#888'}; font-weight:bold;">
                 {f'⬇ 下降 ${curr_avg_price - new_avg_price:.2f}' if new_avg_price < curr_avg_price else '變動不大'}
             </div>
         </div>
@@ -389,9 +415,7 @@ with st.sidebar:
     st.header("⚙️ 參數設定")
     ticker_input = st.text_input("股票代號", "TSLA", key="sidebar_ticker").upper()
     
-    # 增加手動更新按鈕
     if st.button("🔄 更新報價 (Refresh)"):
-        # 清除資料，強制重抓
         if 'stored_ticker' in st.session_state:
             del st.session_state['stored_ticker']
         st.rerun()
@@ -412,15 +436,12 @@ with st.sidebar:
 # --- 6. 主程式 ---
 if ticker_input:
     try:
-        # [關鍵修改] 檢查 Session State 是否已有該股票的資料
-        # 如果是新股票代號，或者資料還沒抓過，才去執行 yfinance
         if 'stored_ticker' not in st.session_state or st.session_state.stored_ticker != ticker_input:
             
             with st.spinner(f"正在抓取 {ticker_input} 數據..."):
                 df, df_intra, info, quote_type = fetch_stock_data_now(ticker_input)
                 exchange_rate = fetch_exchange_rate_now()
                 
-                # 存入 Session State (鎖定數據)
                 st.session_state.stored_ticker = ticker_input
                 st.session_state.data_df = df
                 st.session_state.data_df_intra = df_intra
@@ -428,13 +449,11 @@ if ticker_input:
                 st.session_state.data_quote_type = quote_type
                 st.session_state.data_exchange_rate = exchange_rate
                 
-                # 清除舊的計算機輸入暫存
                 keys_to_clear = ["buy_price_input", "cost_price_input", "target_sell_input", "inv_curr_avg", "inv_new_price"]
                 for k in keys_to_clear:
                     if k in st.session_state:
                         del st.session_state[k]
 
-        # [關鍵修改] 直接從 Session State 讀取資料
         df = st.session_state.data_df
         df_intra = st.session_state.data_df_intra
         info = st.session_state.data_info
@@ -443,7 +462,7 @@ if ticker_input:
 
         if not df.empty and len(df) > 200:
             
-            # --- A. 指標計算 (技術分析邏輯) ---
+            # --- A. 指標計算 ---
             if strategy_mode == "🤖 自動判別 (Auto)":
                 mcap = info.get('marketCap', 0)
                 if mcap > 200_000_000_000:
@@ -508,12 +527,13 @@ if ticker_input:
 
                 reg_change = regular_price - previous_close
                 reg_pct = (reg_change / previous_close) * 100
-                reg_color = "#ff4b4b" if reg_change > 0 else "#21c354"
+                # 美股：綠漲紅跌
+                reg_color = COLOR_UP if reg_change > 0 else COLOR_DOWN
 
                 if is_extended:
                     ext_change = ext_price - regular_price
                     ext_pct = (ext_change / regular_price) * 100
-                    ext_color = "#ff4b4b" if ext_change > 0 else "#21c354"
+                    ext_color = COLOR_UP if ext_change > 0 else COLOR_DOWN
 
                 st.markdown(f"### 📱 {info.get('longName', ticker_input)} ({ticker_input})")
                 st.caption(f"目前策略：{strat_desc}")
@@ -549,9 +569,12 @@ if ticker_input:
                         if not df_regular.empty:
                             day_open_reg = df_regular['Open'].iloc[0]
                             day_close_reg = df_regular['Close'].iloc[-1]
-                            spark_color = '#ff4b4b' if day_close_reg >= day_open_reg else '#21c354'
-                            fill_color = f"rgba({255 if day_close_reg>=day_open_reg else 33}, {75 if day_close_reg>=day_open_reg else 195}, {75 if day_close_reg>=day_open_reg else 84}, 0.15)"
-                            fig_spark.add_trace(go.Scatter(x=df_regular.index, y=df_regular['Close'], mode='lines', line=dict(color=spark_color, width=2), fill='tozeroy', fillcolor=fill_color))
+                            # Sparkline: 美股綠漲紅跌
+                            spark_color = COLOR_UP if day_close_reg >= day_open_reg else COLOR_DOWN
+                            # 填充色也要跟著變
+                            fill_rgba = "rgba(36, 136, 136, 0.15)" if day_close_reg >= day_open_reg else "rgba(231, 71, 94, 0.15)"
+                            
+                            fig_spark.add_trace(go.Scatter(x=df_regular.index, y=df_regular['Close'], mode='lines', line=dict(color=spark_color, width=2), fill='tozeroy', fillcolor=fill_rgba))
                             
                             if 'VWAP' in df_regular.columns:
                                 fig_spark.add_trace(go.Scatter(x=df_regular.index, y=df_regular['VWAP'], mode='lines', line=dict(color='#2962FF', width=1), hoverinfo='skip'))
@@ -563,7 +586,8 @@ if ticker_input:
                         price_html = f"""<div class="metric-card"><div class="metric-title">最新股價</div><div class="metric-value" style="color:{reg_color}">{regular_price:.2f}</div><div class="metric-sub">{('+' if reg_change > 0 else '')}{reg_change:.2f} ({reg_pct:.2f}%)</div>"""
                         if is_extended:
                             price_html += f"""<div class="ext-price-box"><span class="ext-label">{ext_label}</span><span style="color:{ext_color}">{ext_price:.2f} ({('+' if ext_pct > 0 else '')}{ext_pct:.2f}%)</span></div>"""
-                        price_html += f"""<div class="spark-scale"><div style="color:#ff4b4b">H: {day_high_pct:+.1f}%</div><div style="margin-top:25px; color:#21c354">L: {day_low_pct:+.1f}%</div></div></div>"""
+                        # H/L scale 顏色也更新
+                        price_html += f"""<div class="spark-scale"><div style="color:{COLOR_UP}">H: {day_high_pct:+.1f}%</div><div style="margin-top:25px; color:{COLOR_DOWN}">L: {day_low_pct:+.1f}%</div></div></div>"""
                         st.markdown(price_html, unsafe_allow_html=True)
                         st.plotly_chart(fig_spark, use_container_width=True, config={'displayModeBar': False})
                     else:
@@ -593,12 +617,14 @@ if ticker_input:
                 trend_desc = "多空不明，建議觀望"
                 if last['Close'] > strat_fast_val > strat_slow_val:
                     trend_msg = "🚀 火力全開！(多頭)"
-                    trend_bg = "bg-red"
+                    # 多頭=綠
+                    trend_bg = "bg-up" 
                     trend_desc = "均線向上，順勢操作"
                     trend_status = "多頭"
                 elif last['Close'] < strat_fast_val < strat_slow_val:
                     trend_msg = "🐻 熊出沒注意 (空頭)"
-                    trend_bg = "bg-green"
+                    # 空頭=紅
+                    trend_bg = "bg-down"
                     trend_desc = "均線蓋頭，保守為宜"
                     trend_status = "空頭"
                 
@@ -608,9 +634,9 @@ if ticker_input:
                 vol_r = last['Volume'] / df['Vol_MA'].iloc[-1] if df['Vol_MA'].iloc[-1] > 0 else 0
                 v_msg = "❄️ 冷冷清清"
                 v_bg = "bg-gray"
-                if vol_r > 1.5: 
+                if vol_r > 2.0: 
                     v_msg = "🔥 資金派對 (爆量)"
-                    v_bg = "bg-red"
+                    v_bg = "bg-down" # 爆量通常用顯眼色(紅)
                     vol_status = "爆量"
                 elif vol_r > 1.0:
                     v_msg = "💧 人氣回溫" 
@@ -620,7 +646,7 @@ if ticker_input:
                     st.markdown(f"""<div class="metric-card"><div class="metric-title">量能判讀</div><div class="metric-value" style="font-size:1.3rem;">{v_msg}</div><div><span class="status-badge {v_bg}">{vol_r:.1f} 倍均量</span></div><div class="metric-sub">成交量活躍度分析</div></div>""", unsafe_allow_html=True)
 
                 m_msg = "🐂 牛軍集結" if last['Hist'] > 0 else "📉 空軍壓境"
-                m_bg = "bg-red" if last['Hist'] > 0 else "bg-green"
+                m_bg = "bg-up" if last['Hist'] > 0 else "bg-down" # 美股綠紅
                 macd_status = "多方" if last['Hist'] > 0 else "空方"
                 with k3:
                     st.markdown(f"""<div class="metric-card"><div class="metric-title">MACD 趨勢</div><div class="metric-value" style="font-size:1.3rem;">{m_msg}</div><div><span class="status-badge {m_bg}">數值: {last['MACD']:.2f}</span></div><div class="metric-sub">籌碼動能方向</div></div>""", unsafe_allow_html=True)
@@ -630,11 +656,11 @@ if ticker_input:
                 r_bg = "bg-gray"
                 if r_val > 70: 
                     r_msg = "🔥 太燙了！(過熱)" 
-                    r_bg = "bg-red"
+                    r_bg = "bg-down" # 警戒紅
                     rsi_status = "過熱"
                 elif r_val < 30: 
                     r_msg = "🧊 跌過頭囉 (超賣)"
-                    r_bg = "bg-green"
+                    r_bg = "bg-up" # 機會綠
                     rsi_status = "超賣"
                 with k4:
                     st.markdown(f"""<div class="metric-card"><div class="metric-title">RSI 強弱</div><div class="metric-value" style="font-size:1.3rem;">{r_msg}</div><div><span class="status-badge {r_bg}">數值: {r_val:.1f}</span></div><div class="metric-sub">乖離率判斷</div></div>""", unsafe_allow_html=True)
@@ -651,21 +677,22 @@ if ticker_input:
 
                 st.markdown("#### 📉 技術分析")
                 
-                # --- [新增] 時間區間選擇器 (改成滑桿 1~12) ---
                 st.write("##### 📅 選擇歷史走勢長度 (月)")
                 chart_months = st.slider(" ", 1, 12, 6, label_visibility="collapsed")
                 
-                # 根據選擇切片資料
                 cutoff = df.index[-1] - pd.DateOffset(months=chart_months)
-                df_chart = df[df.index >= cutoff]
+                df_chart = df[df.index >= cutoff].copy()
                 
-                # [關鍵修正] 設定 rangebreaks 隱藏週末 (解決空格問題)
                 no_weekends = [dict(bounds=["sat", "mon"])]
-                # ----------------------------
 
                 st.markdown("<div class='chart-title'>📈 股價走勢 & 均線</div>", unsafe_allow_html=True)
                 fig_price = go.Figure()
-                fig_price.add_trace(go.Candlestick(x=df_chart.index, open=df_chart['Open'], high=df_chart['High'], low=df_chart['Low'], close=df_chart['Close'], name='K線', showlegend=False))
+                # K線圖顏色設定 (美股綠漲紅跌)
+                fig_price.add_trace(go.Candlestick(
+                    x=df_chart.index, open=df_chart['Open'], high=df_chart['High'], low=df_chart['Low'], close=df_chart['Close'], 
+                    name='K線', showlegend=False,
+                    increasing_line_color=COLOR_UP, decreasing_line_color=COLOR_DOWN
+                ))
                 fig_price.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_5'], line=dict(color='#D500F9', width=1), name='MA5', showlegend=True))
                 fig_price.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_20'], line=dict(color='#FF6D00', width=1.5), name='MA20', showlegend=True))
                 fig_price.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_60'], line=dict(color='#00C853', width=1.5), name='MA60', showlegend=True))
@@ -677,16 +704,28 @@ if ticker_input:
                     xaxis_rangeslider_visible=False, dragmode=False, 
                     legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5)
                 )
-                # 套用移除週末設定
                 fig_price.update_xaxes(rangebreaks=no_weekends)
                 st.plotly_chart(fig_price, use_container_width=True, config={'displayModeBar': False})
 
+                # --- 成交量 (量能分級 + 均量線) ---
+                vol_colors = []
+                for i in range(len(df_chart)):
+                    row = df_chart.iloc[i]
+                    vol_ma_val = row['Vol_MA'] if pd.notna(row['Vol_MA']) and row['Vol_MA'] > 0 else row['Volume']
+                    ratio = row['Volume'] / vol_ma_val if vol_ma_val > 0 else 1.0
+                    
+                    if ratio >= 2.0: c = VOL_EXPLODE
+                    elif ratio >= 1.0: c = VOL_NORMAL
+                    else: c = VOL_SHRINK
+                    vol_colors.append(c)
+
                 st.markdown("<div class='chart-title'>📊 成交量</div>", unsafe_allow_html=True)
                 fig_vol = go.Figure()
-                colors = ['red' if o > c else 'green' for o, c in zip(df_chart['Open'], df_chart['Close'])]
-                fig_vol.add_trace(go.Bar(x=df_chart.index, y=df_chart['Volume'], marker_color=colors, name='Volume'))
-                fig_vol.update_layout(height=250, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False)
-                # 套用移除週末設定
+                fig_vol.add_trace(go.Bar(x=df_chart.index, y=df_chart['Volume'], marker_color=vol_colors, name='Volume'))
+                # 加入均量線
+                fig_vol.add_trace(go.Scatter(x=df_chart.index, y=df_chart['Vol_MA'], mode='lines', line=dict(color=VOL_MA_LINE, width=1.5), name='Vol MA'))
+                
+                fig_vol.update_layout(height=250, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False, showlegend=False)
                 fig_vol.update_xaxes(rangebreaks=no_weekends)
                 st.plotly_chart(fig_vol, use_container_width=True, config={'displayModeBar': False})
 
@@ -696,17 +735,30 @@ if ticker_input:
                 fig_rsi.add_hline(y=70, line_dash="dash", line_color="red")
                 fig_rsi.add_hline(y=30, line_dash="dash", line_color="green")
                 fig_rsi.update_layout(height=250, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False)
-                # 套用移除週末設定
                 fig_rsi.update_xaxes(rangebreaks=no_weekends)
                 st.plotly_chart(fig_rsi, use_container_width=True, config={'displayModeBar': False})
+
+                # --- MACD (4級距配色) ---
+                full_macd_colors = []
+                for i in range(len(df)):
+                    hist = df['Hist'].iloc[i]
+                    prev_hist = df['Hist'].iloc[i-1] if i > 0 else 0
+                    
+                    if hist >= 0:
+                        col = MACD_BULL_GROW if hist > prev_hist else MACD_BULL_SHRINK
+                    else:
+                        col = MACD_BEAR_GROW if hist < prev_hist else MACD_BEAR_SHRINK
+                    full_macd_colors.append(col)
+                
+                slice_idx = len(df) - len(df_chart)
+                chart_macd_colors = full_macd_colors[slice_idx:]
 
                 st.markdown("<div class='chart-title'>🌊 MACD 趨勢指標</div>", unsafe_allow_html=True)
                 fig_macd = go.Figure()
                 fig_macd.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MACD'], line=dict(color='#2196F3', width=1), name='MACD'))
                 fig_macd.add_trace(go.Scatter(x=df_chart.index, y=df_chart['Signal'], line=dict(color='#FF5722', width=1), name='Signal'))
-                fig_macd.add_trace(go.Bar(x=df_chart.index, y=df_chart['Hist'], marker_color=['red' if h < 0 else 'green' for h in df_chart['Hist']], name='Hist'))
+                fig_macd.add_trace(go.Bar(x=df_chart.index, y=df_chart['Hist'], marker_color=chart_macd_colors, name='Hist'))
                 fig_macd.update_layout(height=250, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='white', plot_bgcolor='white', dragmode=False)
-                # 套用移除週末設定
                 fig_macd.update_xaxes(rangebreaks=no_weekends)
                 st.plotly_chart(fig_macd, use_container_width=True, config={'displayModeBar': False})
 
@@ -734,14 +786,12 @@ if ticker_input:
             # 分頁 2: 交易規劃計算機 (使用局部刷新)
             # ==========================================
             with tab_calc:
-                # 這裡直接呼叫被 @st.fragment 裝飾的函數
                 render_calculator_tab(current_close_price, exchange_rate, quote_type)
 
             # ==========================================
             # 分頁 3: 庫存管理 (使用局部刷新)
             # ==========================================
             with tab_inv:
-                # 這裡直接呼叫被 @st.fragment 裝飾的函數
                 render_inventory_tab(current_close_price, quote_type)
 
         else:
