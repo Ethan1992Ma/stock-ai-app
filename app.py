@@ -43,7 +43,7 @@ st.markdown("""
     .spark-scale {
         position: absolute;
         right: 15px;
-        top: 55%; /* 微調位置 */
+        top: 55%;
         transform: translateY(-50%);
         text-align: right;
         font-size: 0.7rem;
@@ -111,7 +111,6 @@ st.markdown("""
 def get_stock_data(ticker):
     stock = yf.Ticker(ticker)
     df = stock.history(period="2y")
-    # 抓取盤前盤後
     df_intra = stock.history(period="1d", interval="5m", prepost=True)
     info = stock.info
     return df, df_intra, info
@@ -163,15 +162,19 @@ if ticker_input:
             df['Hist'] = macd.macd_diff()
             df['Vol_MA'] = SMAIndicator(df['Volume'], window=20).sma_indicator()
 
+            # --- 關鍵修復：定義 last 與 prev ---
+            last = df.iloc[-1]
+            prev = df.iloc[-2]
+
             # --- 價格顯示邏輯 ---
             live_price = df_intra['Close'].iloc[-1] if not df_intra.empty else 0
-            regular_price = info.get('currentPrice', info.get('regularMarketPrice', df['Close'].iloc[-1]))
-            previous_close = info.get('previousClose', df['Close'].iloc[-2])
+            regular_price = info.get('currentPrice', info.get('regularMarketPrice', last['Close']))
+            previous_close = info.get('previousClose', prev['Close'])
             
-            # 判斷盤前盤後
             is_extended = False
             ext_price = 0
             ext_pct = 0
+            ext_label = ""
             
             if 'preMarketPrice' in info and info['preMarketPrice'] is not None:
                 ext_price = info['preMarketPrice']
@@ -182,13 +185,11 @@ if ticker_input:
                 is_extended = True
                 ext_label = "盤後"
             
-            # 若無明確API欄位但價格差異大，視為盤後
             if not is_extended and abs(live_price - regular_price) / regular_price > 0.001:
                  ext_price = live_price
                  is_extended = True
                  ext_label = "盤後/試撮"
 
-            # 計算漲跌幅
             reg_change = regular_price - previous_close
             reg_pct = (reg_change / previous_close) * 100
             reg_color = "#ff4b4b" if reg_change > 0 else "#21c354"
@@ -202,14 +203,12 @@ if ticker_input:
             st.markdown(f"### 📱 {info.get('longName', ticker_input)} ({ticker_input})")
             st.caption(f"目前策略：{strat_desc}")
 
-            # 【區塊 A】基本面與價格 (盤前盤後虛線版)
+            # 【區塊 A】基本面與價格
             c1, c2, c3, c4 = st.columns(4)
             with c1:
                 fig_spark = go.Figure()
                 
                 if not df_intra.empty:
-                    # 處理時區與正規交易時間
-                    # 確保索引是 datetime
                     df_intra.index = pd.to_datetime(df_intra.index)
                     
                     if ".TW" in ticker_input:
@@ -221,32 +220,25 @@ if ticker_input:
                         open_time = time(9, 30)
                         close_time = time(16, 0)
                     
-                    # 轉換時區以利篩選
                     try:
                         df_intra_tz = df_intra.tz_convert(tz)
                     except:
-                        # 若無時區資訊，假設已經是該地時間 (台股通常無 tz)
                         df_intra_tz = df_intra
 
-                    # 分離正規時間與盤前盤後
-                    # 1. 畫底圖 (全天候，灰色虛線)
                     day_high = df_intra['High'].max()
                     day_low = df_intra['Low'].min()
-                    
-                    # 計算今日相對開盤的最高/最低漲跌幅 (當作座標)
                     day_high_pct = ((day_high - previous_close) / previous_close) * 100
                     day_low_pct = ((day_low - previous_close) / previous_close) * 100
 
-                    # Trace 1: 灰色虛線 (代表盤前盤後或背景)
+                    # 1. 底圖 (灰色虛線)
                     fig_spark.add_trace(go.Scatter(
                         x=df_intra.index, y=df_intra['Close'],
                         mode='lines',
-                        line=dict(color='#bdc3c7', width=1.5, dash='dot'), # 灰色虛線
+                        line=dict(color='#bdc3c7', width=1.5, dash='dot'),
                         hoverinfo='skip'
                     ))
 
-                    # Trace 2: 正規時間實線 (紅/綠)
-                    # 篩選正規時間內的數據
+                    # 2. 正規時間 (實線)
                     mask = (df_intra_tz.index.time >= open_time) & (df_intra_tz.index.time <= close_time)
                     df_regular = df_intra[mask]
                     
@@ -259,25 +251,17 @@ if ticker_input:
                         fig_spark.add_trace(go.Scatter(
                             x=df_regular.index, y=df_regular['Close'],
                             mode='lines',
-                            line=dict(color=spark_color, width=2), # 實線
+                            line=dict(color=spark_color, width=2),
                             fill='tozeroy', 
                             fillcolor=fill_color
                         ))
 
-                    # 鎖定 X 軸範圍 (包含盤前盤後一點點緩衝)
-                    x_start = df_intra.index[0]
-                    # 如果是美股，強制拉長 X 軸到 16:00 之後一點點，讓盤中看起來是進行式
-                    if ".TW" not in ticker_input:
-                         # 簡單處理：取當天開盤日期的 04:00 到 20:00 (涵蓋美股全時段)
-                         pass # 自動縮放就好，因為底圖有全天數據
-
-                    # 動態 Y 軸
                     y_min = day_low * 0.999
                     y_max = day_high * 1.001
                     
                     fig_spark.update_layout(
                         height=80,
-                        margin=dict(l=0, r=40, t=5, b=5), # 右邊留白給刻度
+                        margin=dict(l=0, r=40, t=5, b=5),
                         xaxis=dict(visible=False),
                         yaxis=dict(visible=False, range=[y_min, y_max]),
                         paper_bgcolor='rgba(0,0,0,0)',
@@ -286,7 +270,6 @@ if ticker_input:
                         dragmode=False
                     )
                     
-                    # 組合 HTML
                     price_html = f"""
                     <div class="metric-card">
                         <div class="metric-title">最新股價</div>
@@ -312,7 +295,6 @@ if ticker_input:
                     """
                     
                     price_html += f"{scale_html}</div>"
-                    
                     st.markdown(price_html, unsafe_allow_html=True)
                     st.plotly_chart(fig_spark, use_container_width=True, config={'displayModeBar': False})
                 else:
