@@ -4,7 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from ta.trend import SMAIndicator, MACD
 from ta.momentum import RSIIndicator
-from datetime import time, timedelta
+from datetime import time
 
 # --- 1. 網頁設定 ---
 st.set_page_config(page_title="AI 智能操盤戰情室 (VIP 終極版)", layout="wide", initial_sidebar_state="collapsed")
@@ -44,6 +44,7 @@ st.markdown(f"""
     .stApp {{ background-color: #f8f9fa; }}
     
     /* 強制所有文字深色 (解決 iPhone Dark Mode) */
+    /* 注意：這裡不針對 span 做全域強制，以免蓋掉我們自定義的顏色 span */
     h1, h2, h3, h4, h5, h6, p, div, label, li {{
         color: #000000 !important;
     }}
@@ -102,6 +103,7 @@ st.markdown(f"""
         font-size: 0.7rem;
         line-height: 1.4;
         font-weight: 600;
+        /* 移除這裡的 color 強制，交給內部的 span 控制 */
     }}
 
     .ai-summary-card {{
@@ -462,20 +464,8 @@ with st.sidebar:
 # --- 6. 主程式 ---
 if ticker_input:
     try:
-        # [變數初始化] 避免 NameError
-        reg_class = "txt-gray-vip"
-        reg_pct = 0
-        regular_price = 0
-        previous_close = 0
-        reg_change = 0
-        ext_label = ""
-        ext_class = ""
-        ext_price = 0
-        ext_pct = 0
-        is_extended = False
-        
-        # [State Check]
         if 'stored_ticker' not in st.session_state or st.session_state.stored_ticker != ticker_input:
+            
             with st.spinner(f"正在抓取 {ticker_input} 數據..."):
                 df, df_intra, info, quote_type = fetch_stock_data_now(ticker_input)
                 exchange_rate = fetch_exchange_rate_now()
@@ -492,49 +482,15 @@ if ticker_input:
                     if k in st.session_state:
                         del st.session_state[k]
 
-        # [Important] Use .copy() to ensure we work on fresh data every run
-        df = st.session_state.data_df.copy()
+        df = st.session_state.data_df
         df_intra = st.session_state.data_df_intra
         info = st.session_state.data_info
         quote_type = st.session_state.data_quote_type
         exchange_rate = st.session_state.data_exchange_rate
 
-        if not df.empty and len(df) > 100: 
+        if not df.empty and len(df) > 200:
             
-            # --- [B. 全域變數計算] ---
-            last = df.iloc[-1]
-            prev = df.iloc[-2]
-            current_close_price = last['Close']
-            
-            live_price = df_intra['Close'].iloc[-1] if not df_intra.empty else 0
-            regular_price = info.get('currentPrice', info.get('regularMarketPrice', last['Close']))
-            previous_close = info.get('previousClose', prev['Close'])
-            
-            reg_change = regular_price - previous_close
-            reg_pct = (reg_change / previous_close) * 100
-            reg_class = "txt-up-vip" if reg_change > 0 else "txt-down-vip"
-            
-            if 'preMarketPrice' in info and info['preMarketPrice'] is not None:
-                ext_price = info['preMarketPrice']
-                is_extended = True
-                ext_label = "盤前"
-            elif 'postMarketPrice' in info and info['postMarketPrice'] is not None:
-                ext_price = info['postMarketPrice']
-                is_extended = True
-                ext_label = "盤後"
-            
-            if not is_extended and abs(live_price - regular_price) / regular_price > 0.001:
-                 ext_price = live_price
-                 is_extended = True
-                 ext_label = "盤後/試撮"
-
-            if is_extended:
-                ext_change = ext_price - regular_price
-                ext_pct = (ext_change / regular_price) * 100
-                ext_class = "txt-up-vip" if ext_change > 0 else "txt-down-vip"
-
-            # --- [C. 確保 MACD 運算 (解決 KeyError)] ---
-            # 1. MA
+            # --- A. 指標計算 ---
             if strategy_mode == "🤖 自動判別 (Auto)":
                 mcap = info.get('marketCap', 0)
                 if mcap > 200_000_000_000:
@@ -551,27 +507,64 @@ if ticker_input:
             strat_fast_val = SMAIndicator(df['Close'], window=strat_fast).sma_indicator().iloc[-1]
             strat_slow_val = SMAIndicator(df['Close'], window=strat_slow).sma_indicator().iloc[-1]
             
-            # 2. RSI
             df['RSI'] = RSIIndicator(df['Close'], window=14).rsi()
-            
-            # 3. MACD (手動計算版 - 最穩定)
-            ema12 = df['Close'].ewm(span=12, adjust=False).mean()
-            ema26 = df['Close'].ewm(span=26, adjust=False).mean()
-            df['MACD'] = ema12 - ema26
-            df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
-            # [關鍵修正2] 確保 'Hist' 在所有情況下都被計算
-            df['Hist'] = df['MACD'] - df['Signal'] 
-            
-            # 4. Vol MA
+            macd = MACD(df['Close'])
+            df['MACD'] = macd.macd()
+            df['Signal'] = macd.macd_signal()
+            df['Hist'] = macd.macd_diff() 
             df['Vol_MA'] = SMAIndicator(df['Volume'], window=20).sma_indicator()
 
-            # --- 頁面佈局 ---
+            last = df.iloc[-1]
+            prev = df.iloc[-2]
+            current_close_price = last['Close']
+
+            # --- 建立 Tabs 分頁 ---
             tab_analysis, tab_calc, tab_inv = st.tabs(["📊 技術分析", "🧮 交易計算", "📦 庫存管理"])
 
             # ==========================================
             # 分頁 1: 技術分析
             # ==========================================
             with tab_analysis:
+                if not df_intra.empty:
+                    df_intra['Cum_Vol'] = df_intra['Volume'].cumsum()
+                    df_intra['Cum_Vol_Price'] = (df_intra['Close'] * df_intra['Volume']).cumsum()
+                    df_intra['VWAP'] = df_intra['Cum_Vol_Price'] / df_intra['Cum_Vol']
+
+                live_price = df_intra['Close'].iloc[-1] if not df_intra.empty else 0
+                regular_price = info.get('currentPrice', info.get('regularMarketPrice', last['Close']))
+                previous_close = info.get('previousClose', prev['Close'])
+                
+                is_extended = False
+                ext_price = 0
+                ext_pct = 0
+                ext_label = ""
+                
+                if 'preMarketPrice' in info and info['preMarketPrice'] is not None:
+                    ext_price = info['preMarketPrice']
+                    is_extended = True
+                    ext_label = "盤前"
+                elif 'postMarketPrice' in info and info['postMarketPrice'] is not None:
+                    ext_price = info['postMarketPrice']
+                    is_extended = True
+                    ext_label = "盤後"
+                
+                if not is_extended and abs(live_price - regular_price) / regular_price > 0.001:
+                     ext_price = live_price
+                     is_extended = True
+                     ext_label = "盤後/試撮"
+
+                reg_change = regular_price - previous_close
+                reg_pct = (reg_change / previous_close) * 100
+                # 美股：綠漲紅跌 (使用自定義色)
+                
+                # 使用 VIP class 字串來代入 HTML
+                reg_class = "txt-up-vip" if reg_change > 0 else "txt-down-vip"
+
+                if is_extended:
+                    ext_change = ext_price - regular_price
+                    ext_pct = (ext_change / regular_price) * 100
+                    ext_class = "txt-up-vip" if ext_change > 0 else "txt-down-vip"
+
                 st.markdown(f"### 📱 {info.get('longName', ticker_input)} ({ticker_input})")
                 st.caption(f"目前策略：{strat_desc}")
 
@@ -589,69 +582,45 @@ if ticker_input:
                             tz = 'America/New_York'
                             open_time = time(9, 30)
                             close_time = time(16, 0)
-                        
                         try:
                             df_intra_tz = df_intra.tz_convert(tz)
                         except:
                             df_intra_tz = df_intra
-
-                        # 準備 Sparkline 數據 (台灣時間)
-                        plot_data = df_intra_tz.copy()
-                        if str(plot_data.index.tz) == 'America/New_York':
-                            plot_data.index = plot_data.index.tz_convert('Asia/Taipei')
 
                         day_high = df_intra['High'].max()
                         day_low = df_intra['Low'].min()
                         day_high_pct = ((day_high - previous_close) / previous_close) * 100
                         day_low_pct = ((day_low - previous_close) / previous_close) * 100
 
-                        # 全程繪製 (包含盤前盤後) - 使用淺灰色虛線底圖
-                        fig_spark.add_trace(go.Scatter(x=plot_data.index, y=plot_data['Close'], mode='lines', line=dict(color='#bdc3c7', width=1.5, dash='dot'), hoverinfo='skip'))
+                        fig_spark.add_trace(go.Scatter(x=df_intra.index, y=df_intra['Close'], mode='lines', line=dict(color='#bdc3c7', width=1.5, dash='dot'), hoverinfo='skip'))
                         
-                        # 簡單的填色邏輯 (全時段)
-                        day_open = plot_data['Open'].iloc[0]
-                        day_close = plot_data['Close'].iloc[-1]
-                        spark_color = COLOR_UP if day_close >= day_open else COLOR_DOWN
-                        fill_color = "rgba(5, 154, 129, 0.15)" if day_close >= day_open else "rgba(242, 54, 69, 0.15)"
-                        
-                        fig_spark.add_trace(go.Scatter(x=plot_data.index, y=plot_data['Close'], mode='lines', line=dict(color=spark_color, width=2), fill='tozeroy', fillcolor=fill_color))
-                        
-                        if 'VWAP' in plot_data.columns:
-                            fig_spark.add_trace(go.Scatter(x=plot_data.index, y=plot_data['VWAP'], mode='lines', line=dict(color=COLOR_VWAP, width=1), hoverinfo='skip'))
+                        mask = (df_intra_tz.index.time >= open_time) & (df_intra_tz.index.time <= close_time)
+                        df_regular = df_intra[mask]
+                        if not df_regular.empty:
+                            day_open_reg = df_regular['Open'].iloc[0]
+                            day_close_reg = df_regular['Close'].iloc[-1]
+                            spark_color = COLOR_UP if day_close_reg >= day_open_reg else COLOR_DOWN
+                            fill_color = "rgba(5, 154, 129, 0.15)" if day_close_reg >= day_open_reg else "rgba(242, 54, 69, 0.15)"
+                            
+                            fig_spark.add_trace(go.Scatter(x=df_regular.index, y=df_regular['Close'], mode='lines', line=dict(color=spark_color, width=2), fill='tozeroy', fillcolor=fill_color))
+                            
+                            if 'VWAP' in df_regular.columns:
+                                fig_spark.add_trace(go.Scatter(x=df_regular.index, y=df_regular['VWAP'], mode='lines', line=dict(color=COLOR_VWAP, width=1), hoverinfo='skip'))
 
                         y_min = day_low * 0.999
                         y_max = day_high * 1.001
+                        fig_spark.update_layout(height=80, margin=dict(l=0, r=40, t=5, b=5), xaxis=dict(visible=False), yaxis=dict(visible=False, range=[y_min, y_max]), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False, dragmode=False)
                         
-                        # [關鍵修改] 寫死冬令時間刻度
-                        base_date = plot_data.index[0].date()
-                        # 需要處理跨日 (22:30 當天, 05:00/09:00 隔天)
-                        # 注意：這裡假設數據包含完整的交易時段，如果數據是昨天盤後，那 base_date 就會是昨天
-                        t1 = pd.Timestamp.combine(base_date, time(17, 0)).tz_localize('Asia/Taipei')
-                        t2 = pd.Timestamp.combine(base_date, time(22, 30)).tz_localize('Asia/Taipei')
-                        t3 = pd.Timestamp.combine(base_date + timedelta(days=1), time(5, 0)).tz_localize('Asia/Taipei')
-                        t4 = pd.Timestamp.combine(base_date + timedelta(days=1), time(9, 0)).tz_localize('Asia/Taipei')
-                        
-                        fig_spark.update_layout(
-                            height=100, margin=dict(l=0, r=40, t=5, b=20),
-                            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
-                            showlegend=False, dragmode=False,
-                            xaxis=dict(
-                                visible=True, 
-                                tickmode='array',
-                                tickvals=[t1, t2, t3, t4],
-                                ticktext=["17:00", "22:30", "05:00", "09:00"],
-                                tickfont=dict(size=10, color='#000000'), 
-                                showgrid=False
-                            ),
-                            yaxis=dict(visible=False, range=[y_min, y_max])
-                        )
-                        
+                        # [修正] 使用 VIP Class
                         price_html = f"""<div class="metric-card"><div class="metric-title">最新股價</div><div class="metric-value {reg_class}">{regular_price:.2f}</div><div class="metric-sub {reg_class}">{('+' if reg_change > 0 else '')}{reg_change:.2f} ({reg_pct:.2f}%)</div>"""
+                        
                         if is_extended:
                             price_html += f"""<div class="ext-price-box"><span class="ext-label">{ext_label}</span><span class="{ext_class}">{ext_price:.2f} ({('+' if ext_pct > 0 else '')}{ext_pct:.2f}%)</span></div>"""
                         
+                        # [修正] H/L 使用 VIP Class
                         h_class = "txt-up-vip" if day_high_pct >= 0 else "txt-down-vip"
                         l_class = "txt-up-vip" if day_low_pct >= 0 else "txt-down-vip"
+                        
                         price_html += f"""<div class="spark-scale"><div class="{h_class}">H: {day_high_pct:+.1f}%</div><div style="margin-top:25px;" class="{l_class}">L: {day_low_pct:+.1f}%</div></div></div>"""
                         st.markdown(price_html, unsafe_allow_html=True)
                         st.plotly_chart(fig_spark, use_container_width=True, config={'displayModeBar': False, 'staticPlot': True})
@@ -682,7 +651,7 @@ if ticker_input:
                 trend_desc = "多空不明，建議觀望"
                 if last['Close'] > strat_fast_val > strat_slow_val:
                     trend_msg = "🚀 火力全開！(多頭)"
-                    trend_bg = "bg-up"
+                    trend_bg = "bg-up" 
                     trend_desc = "均線向上，順勢操作"
                     trend_status = "多頭"
                 elif last['Close'] < strat_fast_val < strat_slow_val:
@@ -690,8 +659,6 @@ if ticker_input:
                     trend_bg = "bg-down"
                     trend_desc = "均線蓋頭，保守為宜"
                     trend_status = "空頭"
-                else:
-                    trend_status = "盤整"
                 
                 with k1:
                     st.markdown(f"""<div class="metric-card"><div class="metric-title">趨勢訊號</div><div class="metric-value" style="font-size:1.3rem;">{trend_msg}</div><div><span class="status-badge {trend_bg}">MA{strat_fast} vs MA{strat_slow}</span></div><div class="metric-sub">{trend_desc}</div></div>""", unsafe_allow_html=True)
@@ -701,14 +668,12 @@ if ticker_input:
                 v_bg = "bg-gray"
                 if vol_r > 2.0: 
                     v_msg = "🔥 資金派對 (爆量)"
-                    v_bg = "bg-down"
+                    v_bg = "bg-down" 
                     vol_status = "爆量"
                 elif vol_r > 1.0:
                     v_msg = "💧 人氣回溫" 
                     v_bg = "bg-blue"
                     vol_status = "溫和"
-                else:
-                    vol_status = "一般"
                 with k2:
                     st.markdown(f"""<div class="metric-card"><div class="metric-title">量能判讀</div><div class="metric-value" style="font-size:1.3rem;">{v_msg}</div><div><span class="status-badge {v_bg}">{vol_r:.1f} 倍均量</span></div><div class="metric-sub">成交量活躍度分析</div></div>""", unsafe_allow_html=True)
 
@@ -726,11 +691,9 @@ if ticker_input:
                     r_bg = "bg-down"
                     rsi_status = "過熱"
                 elif r_val < 30: 
-                    r_msg = "🧊 跌過頭囉 (超賣)" 
+                    r_msg = "🧊 跌過頭囉 (超賣)"
                     r_bg = "bg-up"
                     rsi_status = "超賣"
-                else:
-                    rsi_status = "中性"
                 with k4:
                     st.markdown(f"""<div class="metric-card"><div class="metric-title">RSI 強弱</div><div class="metric-value" style="font-size:1.3rem;">{r_msg}</div><div><span class="status-badge {r_bg}">數值: {r_val:.1f}</span></div><div class="metric-sub">乖離率判斷</div></div>""", unsafe_allow_html=True)
 
@@ -769,10 +732,15 @@ if ticker_input:
                 fig_price.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_120'], line=dict(color='#78909C', width=1.5, dash='dot'), name='MA120', showlegend=True))
                 
                 fig_price.update_layout(
-                    template="plotly_white", height=400, margin=dict(l=10, r=10, t=10, b=100),
-                    paper_bgcolor='white', plot_bgcolor='white', xaxis_rangeslider_visible=False, dragmode=False, 
+                    template="plotly_white",
+                    height=400, 
+                    margin=dict(l=10, r=10, t=10, b=100),
+                    paper_bgcolor='white', plot_bgcolor='white', 
+                    xaxis_rangeslider_visible=False, dragmode=False, 
                     legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5, font=dict(color='black')),
-                    font=dict(color='black'), xaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0'), yaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0')
+                    font=dict(color='black'), 
+                    xaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0'),
+                    yaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0')
                 )
                 fig_price.update_xaxes(rangebreaks=range_breaks)
                 st.plotly_chart(fig_price, use_container_width=True, config={'displayModeBar': False}, theme=None)
@@ -784,8 +752,10 @@ if ticker_input:
                     row = df_chart.iloc[i]
                     vol = row['Volume']
                     if vol > max_vol: max_vol = vol
+                    
                     vol_ma_val = row['Vol_MA'] if pd.notna(row['Vol_MA']) and row['Vol_MA'] > 0 else vol
                     ratio = vol / vol_ma_val if vol_ma_val > 0 else 1.0
+                    
                     if ratio >= 2.0: c = VOL_EXPLODE
                     elif ratio >= 1.0: c = VOL_NORMAL
                     else: c = VOL_SHRINK
@@ -797,10 +767,14 @@ if ticker_input:
                 fig_vol.add_trace(go.Scatter(x=df_chart.index, y=df_chart['Vol_MA'], mode='lines', line=dict(color=VOL_MA_LINE, width=1.0), name='Vol MA'))
                 
                 fig_vol.update_layout(
-                    template="plotly_white", height=250, margin=dict(l=10, r=10, t=10, b=10), 
-                    paper_bgcolor='white', plot_bgcolor='white', dragmode=False, showlegend=False,
+                    template="plotly_white",
+                    height=250, 
+                    margin=dict(l=10, r=10, t=10, b=10), 
+                    paper_bgcolor='white', plot_bgcolor='white', 
+                    dragmode=False, showlegend=False,
                     yaxis=dict(range=[0, max_vol * 1.25], color='black', showgrid=True, gridcolor='#f0f0f0'),
-                    xaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0'), font=dict(color='black')
+                    xaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0'),
+                    font=dict(color='black')
                 )
                 fig_vol.update_xaxes(rangebreaks=range_breaks)
                 st.plotly_chart(fig_vol, use_container_width=True, config={'displayModeBar': False}, theme=None)
@@ -812,9 +786,11 @@ if ticker_input:
                 fig_rsi.add_hline(y=30, line_dash="dash", line_color=COLOR_UP)   
                 
                 fig_rsi.update_layout(
-                    template="plotly_white", height=250, margin=dict(l=10, r=10, t=10, b=10), 
+                    template="plotly_white",
+                    height=250, margin=dict(l=10, r=10, t=10, b=10), 
                     paper_bgcolor='white', plot_bgcolor='white', dragmode=False,
-                    font=dict(color='black'), xaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0'), yaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0')
+                    font=dict(color='black'), xaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0'), 
+                    yaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0')
                 )
                 fig_rsi.update_xaxes(rangebreaks=range_breaks)
                 st.plotly_chart(fig_rsi, use_container_width=True, config={'displayModeBar': False}, theme=None)
@@ -822,9 +798,9 @@ if ticker_input:
                 # --- MACD ---
                 full_macd_colors = []
                 for i in range(len(df)):
-                    # [確保] 這裡取的值是前面手動計算好的
                     hist = df['Hist'].iloc[i]
                     prev_hist = df['Hist'].iloc[i-1] if i > 0 else 0
+                    
                     if hist >= 0:
                         col = MACD_BULL_GROW if hist > prev_hist else MACD_BULL_SHRINK
                     else:
@@ -841,9 +817,11 @@ if ticker_input:
                 fig_macd.add_trace(go.Bar(x=df_chart.index, y=df_chart['Hist'], marker_color=chart_macd_colors, name='Hist'))
                 
                 fig_macd.update_layout(
-                    template="plotly_white", height=250, margin=dict(l=10, r=10, t=10, b=10), 
+                    template="plotly_white",
+                    height=250, margin=dict(l=10, r=10, t=10, b=10), 
                     paper_bgcolor='white', plot_bgcolor='white', dragmode=False,
-                    font=dict(color='black'), xaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0'), yaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0')
+                    font=dict(color='black'), xaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0'), 
+                    yaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0')
                 )
                 fig_macd.update_xaxes(rangebreaks=range_breaks)
                 st.plotly_chart(fig_macd, use_container_width=True, config={'displayModeBar': False}, theme=None)
