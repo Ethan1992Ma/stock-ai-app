@@ -29,13 +29,7 @@ COLOR_VWAP = "#FF9800"
 # --- 2. CSS 美化 ---
 st.markdown(f"""
     <style>
-    :root {{
-        --primary-color: #ff4b4b;
-        --background-color: #f8f9fa;
-        --secondary-background-color: #ffffff;
-        --text-color: #000000;
-        --font: sans-serif;
-    }}
+    :root {{ --primary-color: #ff4b4b; --background-color: #f8f9fa; --secondary-background-color: #ffffff; --text-color: #000000; --font: sans-serif; }}
     .stApp {{ background-color: #f8f9fa; }}
     h1, h2, h3, h4, h5, h6, p, div, label, li {{ color: #000000 !important; }}
     .stTextInput > label, .stNumberInput > label, .stRadio > label {{ color: #000000 !important; }}
@@ -253,6 +247,9 @@ if ticker_input:
             df['RSI'] = RSIIndicator(df['Close'], window=14).rsi()
             macd = MACD(df['Close'])
             df['MACD'], df['Signal'], df['Hist'] = macd.macd(), macd.macd_signal(), macd.macd_diff()
+            # [修正] 填補 MACD Hist 可能的 NaN 值，避免後續報錯
+            df['Hist'] = df['Hist'].fillna(0)
+            
             df['Vol_MA'] = SMAIndicator(df['Volume'], window=20).sma_indicator()
             current_close_price = last['Close']
 
@@ -317,13 +314,12 @@ if ticker_input:
 
                         # --- [修正核心] 強制設定 X 軸範圍 (美股 04:00 - 20:00) 以對齊時間軸 ---
                         if ".TW" not in ticker_input:
-                            # 取得資料當日 (可能是週五，而今天是週六)
                             current_date = df_intra_tz.index[0].date()
                             tz_ny = pytz.timezone('America/New_York')
                             
-                            # 建立當日的完整時間範圍 (美東時間 04:00 - 20:00)
-                            dt_start = datetime.combine(current_date, time(4, 0)).replace(tzinfo=tz_ny)
-                            dt_end = datetime.combine(current_date, time(20, 0)).replace(tzinfo=tz_ny)
+                            # [關鍵修正] 使用 tz.localize 避免 .replace 造成的 LMT 誤差 (4分鐘誤差)
+                            dt_start = tz_ny.localize(datetime.combine(current_date, time(4, 0)))
+                            dt_end = tz_ny.localize(datetime.combine(current_date, time(20, 0)))
                             
                             fig_spark.update_layout(xaxis=dict(range=[dt_start, dt_end], visible=False))
                         else:
@@ -351,24 +347,22 @@ if ticker_input:
                         
                         # --- [修正核心] 完美對齊的時間軸 HTML ---
                         if ".TW" not in ticker_input:
-                            # 計算對應的台灣時間文字
                             tz_tw = pytz.timezone('Asia/Taipei')
-                            dt_pre = dt_start # 04:00 NY
-                            dt_open = datetime.combine(current_date, time(9, 30)).replace(tzinfo=tz_ny)
-                            dt_close = datetime.combine(current_date, time(16, 0)).replace(tzinfo=tz_ny)
-                            dt_post = dt_end  # 20:00 NY
+                            # 同樣使用 localize 確保時間準確
+                            dt_pre = dt_start 
+                            dt_open = tz_ny.localize(datetime.combine(current_date, time(9, 30)))
+                            dt_close = tz_ny.localize(datetime.combine(current_date, time(16, 0)))
+                            dt_post = dt_end
                             
                             t1 = dt_pre.astimezone(tz_tw).strftime("%H:%M")
                             t2 = dt_open.astimezone(tz_tw).strftime("%H:%M")
                             t3 = dt_close.astimezone(tz_tw).strftime("%H:%M")
                             t4 = dt_post.astimezone(tz_tw).strftime("%H:%M")
                             
-                            # 使用 absolute position 百分比精準對齊
                             # 04:00 -> 0%
                             # 09:30 (5.5h) -> 5.5 / 16 = 34.375%
                             # 16:00 (12h) -> 12 / 16 = 75%
                             # 20:00 (16h) -> 100%
-                            
                             timeline_html = f"""
                             <div style="position: relative; height: 35px; margin-top: 5px; border-top: 1px dashed #eee; font-size: 0.65rem; color: #999; width: 100%;">
                                 <div style="position: absolute; left: 0%; transform: translateX(0%); text-align: left;">
@@ -400,6 +394,9 @@ if ticker_input:
                 st.markdown("#### 🤖 策略訊號解讀")
                 k1, k2, k3, k4 = st.columns(4)
                 
+                # 確保 last['Hist'] 存在且不為空
+                hist_val = last.get('Hist', 0)
+                
                 trend_status, trend_msg, trend_bg = "盤整", "💤 睡覺行情 (盤整)", "bg-gray"
                 if last['Close'] > strat_fast_val > strat_slow_val: trend_status, trend_msg, trend_bg = "多頭", "🚀 火力全開！(多頭)", "bg-up"
                 elif last['Close'] < strat_fast_val < strat_slow_val: trend_status, trend_msg, trend_bg = "空頭", "🐻 熊出沒注意 (空頭)", "bg-down"
@@ -411,8 +408,8 @@ if ticker_input:
                 elif vol_r > 1.0: v_msg, v_bg = "💧 人氣回溫", "bg-blue"
                 with k2: st.markdown(f"""<div class="metric-card"><div class="metric-title">量能判讀</div><div class="metric-value" style="font-size:1.3rem;">{v_msg}</div><div><span class="status-badge {v_bg}">{vol_r:.1f} 倍均量</span></div></div>""", unsafe_allow_html=True)
 
-                m_msg, m_bg = ("🐂 牛軍集結", "bg-up") if last['Hist'] > 0 else ("📉 空軍壓境", "bg-down")
-                with k3: st.markdown(f"""<div class="metric-card"><div class="metric-title">MACD 趨勢</div><div class="metric-value" style="font-size:1.3rem;">{m_msg}</div><div><span class="status-badge {m_bg}">{last['MACD']:.2f}</span></div></div>""", unsafe_allow_html=True)
+                m_msg, m_bg = ("🐂 牛軍集結", "bg-up") if hist_val > 0 else ("📉 空軍壓境", "bg-down")
+                with k3: st.markdown(f"""<div class="metric-card"><div class="metric-title">MACD 趨勢</div><div class="metric-value" style="font-size:1.3rem;">{m_msg}</div><div><span class="status-badge {m_bg}">{last.get('MACD', 0):.2f}</span></div></div>""", unsafe_allow_html=True)
 
                 r_val = last['RSI']
                 r_msg, r_bg = "⚖️ 多空拔河", "bg-gray"
@@ -420,13 +417,11 @@ if ticker_input:
                 elif r_val < 30: r_msg, r_bg = "🧊 跌過頭囉 (超賣)", "bg-up"
                 with k4: st.markdown(f"""<div class="metric-card"><div class="metric-title">RSI 強弱</div><div class="metric-value" style="font-size:1.3rem;">{r_msg}</div><div><span class="status-badge {r_bg}">{r_val:.1f}</span></div></div>""", unsafe_allow_html=True)
 
-                # --- 其餘圖表部分 (保持原樣，略微精簡) ---
+                # --- 其餘圖表部分 ---
                 st.markdown("#### 📏 關鍵均線監控")
                 ma_html = "".join([f'<div class="ma-box"><div class="ma-label">MA {d}</div><div class="ma-val {"txt-up-vip" if last[f"MA_{d}"] > df.iloc[-2][f"MA_{d}"] else "txt-down-vip"}">{last[f"MA_{d}"]:.2f} {"▲" if last[f"MA_{d}"] > df.iloc[-2][f"MA_{d}"] else "▼"}</div></div>' for d in ma_list])
                 st.markdown(f'<div class="ma-container">{ma_html}</div>', unsafe_allow_html=True)
                 
-                # ... (下方主圖表程式碼與先前相同，此處自動省略以節省長度，請保留原有的圖表繪製部分) ...
-                # 為確保完整性，我將圖表部分補上：
                 st.markdown("#### 📉 技術分析")
                 st.write("##### 📅 選擇歷史走勢長度 (月)")
                 chart_months = st.slider(" ", 1, 12, 6, label_visibility="collapsed")
@@ -458,7 +453,9 @@ if ticker_input:
                     fig_rsi.update_layout(height=200, margin=dict(l=10,r=10,t=10,b=10), template="plotly_white"); fig_rsi.update_xaxes(rangebreaks=range_breaks)
                     st.plotly_chart(fig_rsi, use_container_width=True)
                 with c_macd:
-                    fig_macd = go.Figure([go.Scatter(x=df_chart.index, y=df_chart['MACD'], line=dict(color='#2196F3')), go.Scatter(x=df_chart.index, y=df_chart['Signal'], line=dict(color='#FF5722')), go.Bar(x=df_chart.index, y=df_chart['Hist'], marker_color=[(MACD_BULL_GROW if h>0 else MACD_BEAR_GROW) for h in df_chart['Hist']])])
+                    # [修正] 確保 Hist 欄位存在且不為 NaN
+                    hist_data = df_chart['Hist'].fillna(0)
+                    fig_macd = go.Figure([go.Scatter(x=df_chart.index, y=df_chart['MACD'], line=dict(color='#2196F3')), go.Scatter(x=df_chart.index, y=df_chart['Signal'], line=dict(color='#FF5722')), go.Bar(x=df_chart.index, y=hist_data, marker_color=[(MACD_BULL_GROW if h>0 else MACD_BEAR_GROW) for h in hist_data])])
                     fig_macd.update_layout(height=200, margin=dict(l=10,r=10,t=10,b=10), showlegend=False, template="plotly_white"); fig_macd.update_xaxes(rangebreaks=range_breaks)
                     st.plotly_chart(fig_macd, use_container_width=True)
 
