@@ -640,7 +640,53 @@ if ticker_input:
 
                         y_min = day_low * 0.999
                         y_max = day_high * 1.001
-                        fig_spark.update_layout(height=80, margin=dict(l=0, r=40, t=5, b=5), xaxis=dict(visible=False), yaxis=dict(visible=False, range=[y_min, y_max]), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False, dragmode=False)
+
+                        # 自動判斷 DST
+                        et_tz = zoneinfo.ZoneInfo('America/New_York')
+                        now_utc = dt.now(zoneinfo.ZoneInfo('UTC'))
+                        is_dst_now = now_utc.astimezone(et_tz).dst() != timedelta(0)
+
+                        # 獲取今天的 ET 日期
+                        today_et = now_utc.astimezone(et_tz).date()
+
+                        # 定義關鍵時間點 (ET)
+                        key_times_et = [
+                            time(4, 0),   # 盤前開始
+                            time(9, 30),  # 開盤
+                            time(16, 0),  # 收盤 (盤後開始)
+                            time(20, 0)   # 盤後結束
+                        ]
+
+                        # 轉換為完整的 datetime (ET timezone)
+                        key_datetimes = []
+                        for t in key_times_et:
+                            key_dt = dt.combine(today_et, t)
+                            key_dt_et = et_tz.localize(key_dt)
+                            key_datetimes.append(key_dt_et)
+
+                        # 添加 vertical lines 到圖表
+                        shapes = []
+                        for key_dt in key_datetimes:
+                            shapes.append(dict(
+                                type='line',
+                                x0=key_dt,
+                                x1=key_dt,
+                                y0=y_min,
+                                y1=y_max,
+                                line=dict(color='gray', width=1, dash='dash')
+                            ))
+
+                        fig_spark.update_layout(
+                            height=80, 
+                            margin=dict(l=0, r=40, t=5, b=5), 
+                            xaxis=dict(visible=False), 
+                            yaxis=dict(visible=False, range=[y_min, y_max]), 
+                            paper_bgcolor='rgba(0,0,0,0)', 
+                            plot_bgcolor='rgba(0,0,0,0)', 
+                            showlegend=False, 
+                            dragmode=False,
+                            shapes=shapes
+                        )
                         
                         # [修正] 使用 VIP Class
                         price_html = f"""<div class="metric-card"><div class="metric-title">最新股價</div><div class="metric-value {reg_class}">{regular_price:.2f}</div><div class="metric-sub {reg_class}">{('+' if reg_change > 0 else '')}{reg_change:.2f} ({reg_pct:.2f}%)</div>"""
@@ -655,30 +701,6 @@ if ticker_input:
                         price_html += f"""<div class="spark-scale"><div class="{h_class}">H: {day_high_pct:+.1f}%</div><div style="margin-top:25px;" class="{l_class}">L: {day_low_pct:+.1f}%</div></div></div>"""
                         st.markdown(price_html, unsafe_allow_html=True)
                         st.plotly_chart(fig_spark, use_container_width=True, config={'displayModeBar': False, 'staticPlot': True})
-
-                        # 自動判斷 DST
-                        et_tz = zoneinfo.ZoneInfo('America/New_York')
-                        now_utc = dt.now(zoneinfo.ZoneInfo('UTC'))
-                        is_dst_now = now_utc.astimezone(et_tz).dst() != timedelta(0)
-                        season = "夏令" if is_dst_now else "冬令"
-                        time_diff = 12 if is_dst_now else 13  # 台灣 - ET
-
-                        # 計算台灣時間
-                        pre_open_twt = f"{4 + time_diff:02d}:00" if (4 + time_diff) < 24 else f"次日 {4 + time_diff - 24:02d}:00"
-                        open_twt = f"{9 + time_diff:02d}:30" if (9 + time_diff) < 24 else f"次日 {9 + time_diff - 24:02d}:30"  # 9:30
-                        post_start_twt = f"{16 + time_diff:02d}:00" if (16 + time_diff) < 24 else f"次日 {16 + time_diff - 24:02d}:00"
-                        post_end_twt = f"{20 + time_diff:02d}:00" if (20 + time_diff) < 24 else f"次日 {20 + time_diff - 24:02d}:00"
-
-                        # 顯示
-                        st.markdown(f"""
-                        <div style="background-color: #f8f9fa; padding: 10px; border-radius: 10px; margin-top: 10px; font-size: 0.9rem; color: #333;">
-                            <b>台灣時間對應美股關鍵點 ({season})</b><br>
-                            • 盤前開始: {pre_open_twt}<br>
-                            • 正式開盤: {open_twt}<br>
-                            • 盤後開始: {post_start_twt}<br>
-                            • 盤後結束: {post_end_twt}
-                        </div>
-                        """, unsafe_allow_html=True)
                     else:
                         st.info("暫無即時數據")
 
