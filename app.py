@@ -2,12 +2,12 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
-from ta.trend import SMAIndicator
+from ta.trend import SMAIndicator, MACD
 from ta.momentum import RSIIndicator
-from datetime import time, datetime, timedelta
+from datetime import time, timedelta, datetime
 
 # --- 1. 網頁設定 ---
-st.set_page_config(page_title="AI 智能操盤戰情室 (VIP 冬令穩定版)", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="AI 智能操盤戰情室 (VIP 穩定修復版)", layout="wide", initial_sidebar_state="collapsed")
 
 # --- 定義全域配色常數 ---
 COLOR_UP = "#059a81"      # 上漲 (松石綠)
@@ -29,17 +29,7 @@ VOL_MA_LINE = "#000000"
 # VWAP 配色
 COLOR_VWAP = "#FF9800"
 
-# --- [設定] 固定冬令時間 (台灣時間) ---
-# 這裡定義我們想要顯示在 X 軸上的關鍵時間點
-MARKET_TIME = {
-    "p_start": time(17, 0),  # 盤前開始
-    "open": time(22, 30),    # 開盤
-    "close": time(5, 0),     # 收盤 (隔天)
-    "p_end": time(9, 0),     # 盤後結束 (隔天)
-    "label": "冬令"
-}
-
-# --- 2. CSS 美化 ---
+# --- 2. CSS 美化 (維持深色模式修復) ---
 st.markdown(f"""
     <style>
     :root {{
@@ -49,153 +39,37 @@ st.markdown(f"""
         --text-color: #000000;
         --font: sans-serif;
     }}
-    
     .stApp {{ background-color: #f8f9fa; }}
-    
-    h1, h2, h3, h4, h5, h6, p, div, label, li, span {{
-        color: #000000;
-    }}
-    
-    .stTextInput > label, .stNumberInput > label, .stRadio > label {{
-        color: #000000 !important;
-    }}
-    
+    h1, h2, h3, h4, h5, h6, p, div, label, li, span {{ color: #000000; }}
+    .stTextInput > label, .stNumberInput > label, .stRadio > label {{ color: #000000 !important; }}
     .txt-up-vip {{ color: {COLOR_UP} !important; font-weight: bold; }}
     .txt-down-vip {{ color: {COLOR_DOWN} !important; font-weight: bold; }}
     .txt-gray-vip {{ color: {COLOR_NEUTRAL} !important; }}
-    
-    .chart-title {{
-        font-size: 1.1rem;
-        font-weight: 700;
-        margin-top: 10px;
-        margin-bottom: 0px; 
-        padding-left: 5px;
-    }}
-
-    .metric-card {{
-        background-color: #ffffff;
-        padding: 20px;
-        border-radius: 15px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        margin-bottom: 10px;
-        border: 1px solid #f0f0f0;
-        position: relative;
-    }}
+    .chart-title {{ font-size: 1.1rem; font-weight: 700; margin-top: 10px; margin-bottom: 0px; padding-left: 5px; }}
+    .metric-card {{ background-color: #ffffff; padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 10px; border: 1px solid #f0f0f0; position: relative; }}
     .metric-title {{ color: #6c757d !important; font-size: 0.9rem; font-weight: 700; margin-bottom: 5px; }}
     .metric-value {{ font-size: 1.8rem; font-weight: 800; }}
     .metric-sub {{ font-size: 0.9rem; margin-top: 5px; }}
-    
-    .ext-price-box {{
-        background-color: #f1f3f5;
-        padding: 4px 8px;
-        border-radius: 6px;
-        font-size: 0.85rem;
-        font-weight: 600;
-        margin-top: 8px;
-        display: inline-block;
-    }}
-    
-    .spark-scale {{
-        position: absolute;
-        right: 15px;
-        top: 55%;
-        transform: translateY(-50%);
-        text-align: right;
-        font-size: 0.7rem;
-        line-height: 1.4;
-        font-weight: 600;
-    }}
-
-    .ai-summary-card {{
-        background-color: #e3f2fd;
-        padding: 20px;
-        border-radius: 15px;
-        border-left: 5px solid #2196f3;
-        margin-top: 20px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        margin-bottom: 20px;
-    }}
-    
-    .ma-container {{
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        background-color: #ffffff;
-        padding: 20px;
-        border-radius: 15px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        border: 1px solid #f0f0f0;
-        margin-bottom: 20px;
-    }}
-    .ma-box {{
-        flex: 1 1 100px;
-        text-align: center;
-        padding: 10px;
-        background-color: #f8f9fa;
-        border-radius: 10px;
-        border: 1px solid #dee2e6;
-    }}
+    .ext-price-box {{ background-color: #f1f3f5; padding: 4px 8px; border-radius: 6px; font-size: 0.85rem; font-weight: 600; margin-top: 8px; display: inline-block; }}
+    .spark-scale {{ position: absolute; right: 15px; top: 55%; transform: translateY(-50%); text-align: right; font-size: 0.7rem; line-height: 1.4; font-weight: 600; }}
+    .ai-summary-card {{ background-color: #e3f2fd; padding: 20px; border-radius: 15px; border-left: 5px solid #2196f3; margin-top: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }}
+    .ma-container {{ display: flex; flex-wrap: wrap; gap: 10px; background-color: #ffffff; padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #f0f0f0; margin-bottom: 20px; }}
+    .ma-box {{ flex: 1 1 100px; text-align: center; padding: 10px; background-color: #f8f9fa; border-radius: 10px; border: 1px solid #dee2e6; }}
     .ma-label {{ font-size: 0.8rem; font-weight: bold; color: #666 !important; margin-bottom: 5px; }}
     .ma-val {{ font-size: 1.1rem; font-weight: 800; }}
-    
-    .status-badge {{ 
-        padding: 4px 8px; 
-        border-radius: 6px; 
-        font-size: 0.85rem; 
-        font-weight: bold; 
-        color: white !important; 
-        display: inline-block; 
-        margin-top: 8px;
-    }}
-    
+    .status-badge {{ padding: 4px 8px; border-radius: 6px; font-size: 0.85rem; font-weight: bold; color: white !important; display: inline-block; margin-top: 8px; }}
     .bg-up {{ background-color: {COLOR_UP}; }}
     .bg-down {{ background-color: {COLOR_DOWN}; }}
     .bg-gray {{ background-color: {COLOR_NEUTRAL}; }}
     .bg-blue {{ background-color: #0d6efd; }}
-
     .js-plotly-plot .plotly .modebar {{ display: none !important; }}
-
-    .calc-box {{
-        background-color: #ffffff;
-        padding: 15px;
-        border-radius: 12px;
-        border: 1px solid #eee;
-        margin-bottom: 15px;
-    }}
-    .calc-header {{
-        font-size: 1rem;
-        font-weight: bold;
-        margin-bottom: 10px;
-        border-left: 4px solid {COLOR_UP};
-        padding-left: 8px;
-    }}
-    .calc-result {{
-        background-color: #f8f9fa;
-        padding: 10px;
-        border-radius: 8px;
-        text-align: center;
-        margin-top: 10px;
-    }}
+    .calc-box {{ background-color: #ffffff; padding: 15px; border-radius: 12px; border: 1px solid #eee; margin-bottom: 15px; }}
+    .calc-header {{ font-size: 1rem; font-weight: bold; margin-bottom: 10px; border-left: 4px solid {COLOR_UP}; padding-left: 8px; }}
+    .calc-result {{ background-color: #f8f9fa; padding: 10px; border-radius: 8px; text-align: center; margin-top: 10px; }}
     .calc-res-title {{ font-size: 0.8rem; color: #888 !important; }}
     .calc-res-val {{ font-size: 1.4rem; font-weight: bold; }}
-    
-    .fee-badge {{
-        background-color: #fff3cd;
-        color: #856404 !important;
-        padding: 5px 10px;
-        border-radius: 5px;
-        font-size: 0.8rem;
-        border: 1px solid #ffeeba;
-        margin-bottom: 15px;
-        display: flex;
-        align-items: center;
-        gap: 5px;
-    }}
-    
-    div[role="radiogroup"] {{
-        background-color: transparent;
-        border: none;
-    }}
+    .fee-badge {{ background-color: #fff3cd; color: #856404 !important; padding: 5px 10px; border-radius: 5px; font-size: 0.8rem; border: 1px solid #ffeeba; margin-bottom: 15px; display: flex; align-items: center; gap: 5px; }}
+    div[role="radiogroup"] {{ background-color: transparent; border: none; }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -438,7 +312,7 @@ with st.sidebar:
 # --- 6. 主程式 ---
 if ticker_input:
     try:
-        # [變數初始化] 避免 NameError
+        # [變數初始化]
         reg_class = "txt-gray-vip"
         previous_close = 0
         
@@ -460,7 +334,7 @@ if ticker_input:
                     if k in st.session_state:
                         del st.session_state[k]
 
-        # [Important] Use .copy() to ensure we work on fresh data every run
+        # Use .copy() to prevent mutation
         df = st.session_state.data_df.copy()
         df_intra = st.session_state.data_df_intra
         info = st.session_state.data_info
@@ -507,7 +381,7 @@ if ticker_input:
                 ext_pct = (ext_change / regular_price) * 100
                 ext_class = "txt-up-vip" if ext_change > 0 else "txt-down-vip"
 
-            # --- [C. 確保 MACD 運算 (解決 KeyError)] ---
+            # --- [C. 確保 MACD 運算 (使用 ta 套件)] ---
             # 1. MA
             if strategy_mode == "🤖 自動判別 (Auto)":
                 mcap = info.get('marketCap', 0)
@@ -528,12 +402,11 @@ if ticker_input:
             # 2. RSI
             df['RSI'] = RSIIndicator(df['Close'], window=14).rsi()
             
-            # 3. MACD (手動計算版 - 最穩定)
-            ema12 = df['Close'].ewm(span=12, adjust=False).mean()
-            ema26 = df['Close'].ewm(span=26, adjust=False).mean()
-            df['MACD'] = ema12 - ema26
-            df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
-            df['Hist'] = df['MACD'] - df['Signal'] # 這裡強制寫入了 Hist 欄位
+            # 3. MACD (改回使用 ta 套件)
+            macd_obj = MACD(df['Close'])
+            df['MACD'] = macd_obj.macd()
+            df['Signal'] = macd_obj.macd_signal()
+            df['Hist'] = macd_obj.macd_diff() # ta 套件產生的 Hist 欄位
             
             # 4. Vol MA
             df['Vol_MA'] = SMAIndicator(df['Volume'], window=20).sma_indicator()
@@ -568,37 +441,17 @@ if ticker_input:
                         if str(plot_data.index.tz) == 'America/New_York':
                             plot_data.index = plot_data.index.tz_convert('Asia/Taipei')
                         
-                        # 使用寫死的冬令時間
-                        market_times = MARKET_TIME
+                        # 恢復原始畫線邏輯 (整條線)
+                        day_open = plot_data['Open'].iloc[0]
+                        day_close = plot_data['Close'].iloc[-1]
+                        spark_color = COLOR_UP if day_close >= day_open else COLOR_DOWN
+                        fill_color = "rgba(5, 154, 129, 0.15)" if day_close >= day_open else "rgba(242, 54, 69, 0.15)"
                         
-                        def is_market_open_dynamic(dt, m_times):
-                            t = dt.time()
-                            # 跨日邏輯 (22:30 ~ 05:00)
-                            if t >= m_times['open'] or t <= m_times['close']:
-                                return True
-                            return False
-
-                        # 底層灰線
                         fig_spark.add_trace(go.Scatter(
                             x=plot_data.index, y=plot_data['Close'], 
-                            mode='lines', line=dict(color=COLOR_NEUTRAL, width=1.5, dash='dot'), hoverinfo='skip'
+                            mode='lines', line=dict(color=spark_color, width=2), 
+                            fill='tozeroy', fillcolor=fill_color
                         ))
-                        
-                        # 彩色實線
-                        regular_mask = plot_data.index.map(lambda x: is_market_open_dynamic(x, market_times))
-                        df_reg = plot_data[regular_mask]
-                        
-                        if not df_reg.empty:
-                            d_open = df_reg['Open'].iloc[0]
-                            d_close = df_reg['Close'].iloc[-1]
-                            spk_color = COLOR_UP if d_close >= d_open else COLOR_DOWN
-                            fill_rgba = "rgba(5, 154, 129, 0.15)" if d_close >= d_open else "rgba(242, 54, 69, 0.15)"
-                            
-                            fig_spark.add_trace(go.Scatter(
-                                x=df_reg.index, y=df_reg['Close'], 
-                                mode='lines', line=dict(color=spk_color, width=2), 
-                                fill='tozeroy', fillcolor=fill_rgba
-                            ))
 
                         if 'VWAP' in plot_data.columns:
                             fig_spark.add_trace(go.Scatter(x=plot_data.index, y=plot_data['VWAP'], mode='lines', line=dict(color=COLOR_VWAP, width=1), hoverinfo='skip'))
@@ -611,19 +464,15 @@ if ticker_input:
                         y_min = day_low * 0.999
                         y_max = day_high * 1.001
                         
+                        # 固定顯示 4 個關鍵時間點 (冬令)
                         base_date = plot_data.index[0].date()
                         tick_vals = [
-                            pd.Timestamp.combine(base_date, market_times['p_start']).tz_localize('Asia/Taipei'),
-                            pd.Timestamp.combine(base_date, market_times['open']).tz_localize('Asia/Taipei'),
-                            pd.Timestamp.combine(base_date + timedelta(days=1), market_times['close']).tz_localize('Asia/Taipei'),
-                            pd.Timestamp.combine(base_date + timedelta(days=1), market_times['p_end']).tz_localize('Asia/Taipei')
+                            pd.Timestamp.combine(base_date, time(17, 0)).tz_localize('Asia/Taipei'),
+                            pd.Timestamp.combine(base_date, time(22, 30)).tz_localize('Asia/Taipei'),
+                            pd.Timestamp.combine(base_date + timedelta(days=1), time(5, 0)).tz_localize('Asia/Taipei'),
+                            pd.Timestamp.combine(base_date + timedelta(days=1), time(9, 0)).tz_localize('Asia/Taipei')
                         ]
-                        tick_texts = [
-                            market_times['p_start'].strftime("%H:%M"),
-                            market_times['open'].strftime("%H:%M"),
-                            market_times['close'].strftime("%H:%M"),
-                            market_times['p_end'].strftime("%H:%M")
-                        ]
+                        tick_texts = ["17:00", "22:30", "05:00", "09:00"]
 
                         fig_spark.update_layout(
                             height=100, margin=dict(l=0, r=40, t=5, b=20),
@@ -636,7 +485,7 @@ if ticker_input:
                             yaxis=dict(visible=False, range=[y_min, y_max])
                         )
                         
-                        price_html = f"""<div class="metric-card"><div class="metric-title">最新股價 ({market_times['label']})</div><div class="metric-value {reg_class}">{regular_price:.2f}</div><div class="metric-sub {reg_class}">{('+' if reg_change > 0 else '')}{reg_change:.2f} ({reg_pct:.2f}%)</div>"""
+                        price_html = f"""<div class="metric-card"><div class="metric-title">最新股價</div><div class="metric-value {reg_class}">{regular_price:.2f}</div><div class="metric-sub {reg_class}">{('+' if reg_change > 0 else '')}{reg_change:.2f} ({reg_pct:.2f}%)</div>"""
                         if is_extended:
                             price_html += f"""<div class="ext-price-box"><span class="ext-label">{ext_label}</span><span class="{ext_class}">{ext_price:.2f} ({('+' if ext_pct > 0 else '')}{ext_pct:.2f}%)</span></div>"""
                         
@@ -807,7 +656,6 @@ if ticker_input:
 
                 # --- MACD ---
                 full_macd_colors = []
-                # 這裡 Hist 已經絕對存在
                 for i in range(len(df)):
                     hist = df['Hist'].iloc[i]
                     prev_hist = df['Hist'].iloc[i-1] if i > 0 else 0
