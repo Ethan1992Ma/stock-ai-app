@@ -4,7 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from ta.trend import SMAIndicator, MACD
 from ta.momentum import RSIIndicator
-from datetime import time
+from datetime import time, timedelta, datetime # 補上 datetime, timedelta
 
 # --- 1. 網頁設定 ---
 st.set_page_config(page_title="AI 智能操盤戰情室 (VIP 終極版)", layout="wide", initial_sidebar_state="collapsed")
@@ -44,7 +44,6 @@ st.markdown(f"""
     .stApp {{ background-color: #f8f9fa; }}
     
     /* 強制所有文字深色 (解決 iPhone Dark Mode) */
-    /* 注意：這裡不針對 span 做全域強制，以免蓋掉我們自定義的顏色 span */
     h1, h2, h3, h4, h5, h6, p, div, label, li {{
         color: #000000 !important;
     }}
@@ -77,7 +76,6 @@ st.markdown(f"""
         border: 1px solid #f0f0f0;
         position: relative;
     }}
-    /* metric-title 和 sub 保持原色設定 */
     .metric-title {{ color: #6c757d !important; font-size: 0.9rem; font-weight: 700; margin-bottom: 5px; }}
     .metric-value {{ font-size: 1.8rem; font-weight: 800; color: #212529 !important; }}
     .metric-sub {{ font-size: 0.9rem; margin-top: 5px; }} 
@@ -103,7 +101,6 @@ st.markdown(f"""
         font-size: 0.7rem;
         line-height: 1.4;
         font-weight: 600;
-        /* 移除這裡的 color 強制，交給內部的 span 控制 */
     }}
 
     .ai-summary-card {{
@@ -180,7 +177,6 @@ st.markdown(f"""
         margin-top: 10px;
     }}
     .calc-res-title {{ font-size: 0.8rem; color: #888 !important; }}
-    /* 移除這裡的 color: #333 !important，改用 class 控制 */
     .calc-res-val {{ font-size: 1.4rem; font-weight: bold; }}
     
     .fee-badge {{
@@ -580,10 +576,13 @@ if ticker_input:
                             close_time = time(13, 30)
                         else:
                             tz = 'America/New_York'
-                            open_time = time(9, 30)
-                            close_time = time(16, 0)
+                            # 美股冬令交易時間 (台灣時間)
+                            # 盤前開始 17:00, 開盤 22:30, 收盤 05:00, 盤後結束 09:00
+                            open_time = time(22, 30) 
+                            close_time = time(5, 0)
+                        
                         try:
-                            # 關鍵修改：這裡保留了時區轉換
+                            # 關鍵: 轉時區供後續使用
                             df_intra_tz = df_intra.tz_convert(tz)
                         except:
                             df_intra_tz = df_intra
@@ -593,41 +592,78 @@ if ticker_input:
                         day_high_pct = ((day_high - previous_close) / previous_close) * 100
                         day_low_pct = ((day_low - previous_close) / previous_close) * 100
 
-                        # [修改1] X 軸改用 df_intra_tz.index (讓 Plotly 知道是台灣/美東時間)
-                        fig_spark.add_trace(go.Scatter(x=df_intra_tz.index, y=df_intra['Close'], mode='lines', line=dict(color='#bdc3c7', width=1.5, dash='dot'), hoverinfo='skip'))
+                        # [第1層] 畫全時段 (灰色虛線、無填充) - 作為底圖
+                        fig_spark.add_trace(go.Scatter(
+                            x=df_intra_tz.index, 
+                            y=df_intra['Close'], 
+                            mode='lines', 
+                            line=dict(color='#bdc3c7', width=1.5, dash='dot'), 
+                            hoverinfo='skip'
+                        ))
                         
-                        mask = (df_intra_tz.index.time >= open_time) & (df_intra_tz.index.time <= close_time)
-                        df_regular = df_intra[mask]
+                        # [第2層] 畫正規交易時段 (有色實線 + 填充) - 只在 22:30 ~ 05:00
+                        # 邏輯: 時間 >= 22:30 或 時間 <= 05:00 (跨日)
+                        mask_reg = (df_intra_tz.index.time >= open_time) | (df_intra_tz.index.time <= close_time)
+                        df_regular = df_intra_tz[mask_reg]
+                        
                         if not df_regular.empty:
                             day_open_reg = df_regular['Open'].iloc[0]
                             day_close_reg = df_regular['Close'].iloc[-1]
+                            # 決定顏色 (只針對這段)
                             spark_color = COLOR_UP if day_close_reg >= day_open_reg else COLOR_DOWN
-                            fill_color = "rgba(5, 154, 129, 0.15)" if day_close_reg >= day_open_reg else "rgba(242, 54, 69, 0.15)"
+                            # 決定填充色 (帶透明度)
+                            fill_rgb = "5, 154, 129" if day_close_reg >= day_open_reg else "242, 54, 69"
+                            fill_color = f"rgba({fill_rgb}, 0.15)"
                             
-                            # [修改2] X 軸同樣改用轉換時區後的索引 (確保對齊)
-                            fig_spark.add_trace(go.Scatter(x=df_regular.index.tz_convert(tz), y=df_regular['Close'], mode='lines', line=dict(color=spark_color, width=2), fill='tozeroy', fillcolor=fill_color))
+                            fig_spark.add_trace(go.Scatter(
+                                x=df_regular.index, 
+                                y=df_regular['Close'], 
+                                mode='lines', 
+                                line=dict(color=spark_color, width=2), 
+                                fill='tozeroy', 
+                                fillcolor=fill_color
+                            ))
                             
                             if 'VWAP' in df_regular.columns:
-                                fig_spark.add_trace(go.Scatter(x=df_regular.index.tz_convert(tz), y=df_regular['VWAP'], mode='lines', line=dict(color=COLOR_VWAP, width=1), hoverinfo='skip'))
+                                fig_spark.add_trace(go.Scatter(x=df_regular.index, y=df_regular['VWAP'], mode='lines', line=dict(color=COLOR_VWAP, width=1), hoverinfo='skip'))
 
                         y_min = day_low * 0.999
                         y_max = day_high * 1.001
                         
-                        # [修改3] 顯示 X 軸、格式化時間、調整底部 Margin 避免字被切掉
+                        # [軸線設定] 強制指定刻度
+                        # 為了確保刻度顯示在圖表上，我們需要根據資料的日期來產生時間點
+                        # 判斷資料是屬於今天還是跨日
+                        first_dt = df_intra_tz.index[0]
+                        # 簡單判斷: 如果第一筆資料是下午(12點後)，那基準日就是當天；如果是凌晨(12點前)，基準日是昨天
+                        if first_dt.hour >= 12:
+                            base_date = first_dt.date()
+                        else:
+                            base_date = first_dt.date() - pd.Timedelta(days=1)
+                        
+                        # 產生四個關鍵時間點 (需帶入時區以對齊 X 軸)
+                        # 使用 pandas Timestamp 處理時區最穩
+                        tick_vals = [
+                            pd.Timestamp(f"{base_date} 17:00").tz_localize(tz),
+                            pd.Timestamp(f"{base_date} 22:30").tz_localize(tz),
+                            pd.Timestamp(f"{base_date + pd.Timedelta(days=1)} 05:00").tz_localize(tz),
+                            pd.Timestamp(f"{base_date + pd.Timedelta(days=1)} 09:00").tz_localize(tz)
+                        ]
+                        
                         fig_spark.update_layout(
-                            height=100, # 稍微增高一點點給時間軸空間
-                            margin=dict(l=0, r=40, t=5, b=20), # b=20 給時間文字
+                            height=100,
+                            margin=dict(l=0, r=40, t=5, b=20), # b=20 留給時間文字
                             xaxis=dict(
-                                visible=True, 
-                                type='date', 
-                                tickformat='%H:%M', 
+                                visible=True,
+                                tickmode='array',
+                                tickvals=tick_vals,
+                                ticktext=['17:00', '22:30', '05:00', '09:00'],
                                 showgrid=False,
-                                tickfont=dict(color='#666', size=10)
-                            ), 
-                            yaxis=dict(visible=False, range=[y_min, y_max]), 
-                            paper_bgcolor='rgba(0,0,0,0)', 
-                            plot_bgcolor='rgba(0,0,0,0)', 
-                            showlegend=False, 
+                                tickfont=dict(color='#999', size=10)
+                            ),
+                            yaxis=dict(visible=False, range=[y_min, y_max]),
+                            paper_bgcolor='rgba(0,0,0,0)',
+                            plot_bgcolor='rgba(0,0,0,0)',
+                            showlegend=False,
                             dragmode=False
                         )
                         
