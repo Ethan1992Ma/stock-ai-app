@@ -4,9 +4,42 @@ import pandas as pd
 import plotly.graph_objects as go
 from ta.trend import SMAIndicator, MACD
 from ta.momentum import RSIIndicator
-from datetime import time
-import zoneinfo
-from datetime import datetime as dt, timedelta
+import pytz
+from datetime import datetime, time, timedelta
+
+# --- 0. 輔助函數: 取得美股關鍵時間 (自動切換冬夏令) ---
+def get_us_tw_timeline():
+    try:
+        tz_ny = pytz.timezone('America/New_York')
+        tz_tw = pytz.timezone('Asia/Taipei')
+        now_ny = datetime.now(tz_ny)
+        
+        # 設定當日關鍵時間點 (紐約時間)
+        t_pre = now_ny.replace(hour=4, minute=0, second=0, microsecond=0)   # 盤前
+        t_open = now_ny.replace(hour=9, minute=30, second=0, microsecond=0)  # 開盤
+        t_close = now_ny.replace(hour=16, minute=0, second=0, microsecond=0) # 收盤
+        t_post = now_ny.replace(hour=20, minute=0, second=0, microsecond=0)  # 結算
+        
+        # 轉換為台灣時間字串
+        fmt = "%H:%M"
+        str_pre = t_pre.astimezone(tz_tw).strftime(fmt)
+        str_open = t_open.astimezone(tz_tw).strftime(fmt)
+        str_close = t_close.astimezone(tz_tw).strftime(fmt)
+        str_post = t_post.astimezone(tz_tw).strftime(fmt)
+        
+        # 判斷目前是否為夏令 (DST)
+        season = "夏令" if t_pre.dst() != timedelta(0) else "冬令"
+        
+        return f'''
+        <div style="display: flex; justify-content: space-between; font-size: 0.65rem; color: #999; margin-top: 8px; border-top: 1px dashed #eee; padding-top: 4px;">
+            <div style="text-align: center;"><span>盤前 ({season})</span><br><b style="color:#555">{str_pre}</b></div>
+            <div style="text-align: center;"><span>🔔 開盤</span><br><b style="color:#000">{str_open}</b></div>
+            <div style="text-align: center;"><span>🌙 收盤</span><br><b style="color:#000">{str_close}</b></div>
+            <div style="text-align: center;"><span>🏁 結算</span><br><b style="color:#555">{str_post}</b></div>
+        </div>
+        '''
+    except:
+        return ""
 
 # --- 1. 網頁設定 ---
 st.set_page_config(page_title="AI 智能操盤戰情室 (VIP 終極版)", layout="wide", initial_sidebar_state="collapsed")
@@ -589,34 +622,25 @@ if ticker_input:
                         except:
                             df_intra_tz = df_intra
 
-                        mask = (df_intra_tz.index.time >= open_time) & (df_intra_tz.index.time <= close_time)
-                        df_regular = df_intra[mask]
-
-                        # 修改：只用 df_regular 計算 day_high 和 day_low
-                        if not df_regular.empty:
-                            day_high = df_regular['High'].max()
-                            day_low = df_regular['Low'].min()
+                        # [Modify] Calculate H/L based on Regular Trading Hours only (if available)
+                        mask_reg_hl = (df_intra_tz.index.time >= open_time) & (df_intra_tz.index.time <= close_time)
+                        df_reg_hl = df_intra_tz[mask_reg_hl]
+                        
+                        if not df_reg_hl.empty:
+                            day_high = df_reg_hl['High'].max()
+                            day_low = df_reg_hl['Low'].min()
                         else:
-                            # Fallback 如果無盤中數據（e.g., 假日）
-                            day_high = df_intra['High'].max()
-                            day_low = df_intra['Low'].min()
+                            # If regular session hasn't started, use full data (Pre-market)
+                            day_high = df_intra_tz['High'].max()
+                            day_low = df_intra_tz['Low'].min()
 
                         day_high_pct = ((day_high - previous_close) / previous_close) * 100
                         day_low_pct = ((day_low - previous_close) / previous_close) * 100
 
                         fig_spark.add_trace(go.Scatter(x=df_intra.index, y=df_intra['Close'], mode='lines', line=dict(color='#bdc3c7', width=1.5, dash='dot'), hoverinfo='skip'))
                         
-                        # 盤前數據
-                        pre_mask = df_intra_tz.index.time < open_time
-                        df_pre = df_intra[pre_mask]
-                        if not df_pre.empty:
-                            pre_open = df_pre['Open'].iloc[0]
-                            pre_close = df_pre['Close'].iloc[-1]
-                            pre_color = COLOR_UP if pre_close >= pre_open else COLOR_DOWN
-                            pre_fill = "rgba(5, 154, 129, 0.15)" if pre_close >= pre_open else "rgba(242, 54, 69, 0.15)"
-                            fig_spark.add_trace(go.Scatter(x=df_pre.index, y=df_pre['Close'], mode='lines', line=dict(color=pre_color, width=2), fill='tozeroy', fillcolor=pre_fill))
-
-                        # 盤中
+                        mask = (df_intra_tz.index.time >= open_time) & (df_intra_tz.index.time <= close_time)
+                        df_regular = df_intra[mask]
                         if not df_regular.empty:
                             day_open_reg = df_regular['Open'].iloc[0]
                             day_close_reg = df_regular['Close'].iloc[-1]
@@ -628,65 +652,9 @@ if ticker_input:
                             if 'VWAP' in df_regular.columns:
                                 fig_spark.add_trace(go.Scatter(x=df_regular.index, y=df_regular['VWAP'], mode='lines', line=dict(color=COLOR_VWAP, width=1), hoverinfo='skip'))
 
-                        # 盤後數據
-                        post_mask = df_intra_tz.index.time > close_time
-                        df_post = df_intra[post_mask]
-                        if not df_post.empty:
-                            post_open = df_post['Open'].iloc[0]
-                            post_close = df_post['Close'].iloc[-1]
-                            post_color = "#2196F3" if post_close >= post_open else "#1565C0"  # 藍漲/深藍跌
-                            post_fill = "rgba(33, 150, 243, 0.15)" if post_close >= post_open else "rgba(21, 101, 192, 0.15)"
-                            fig_spark.add_trace(go.Scatter(x=df_post.index, y=df_post['Close'], mode='lines', line=dict(color=post_color, width=2), fill='tozeroy', fillcolor=post_fill))
-
                         y_min = day_low * 0.999
                         y_max = day_high * 1.001
-
-                        # 自動判斷 DST
-                        et_tz = zoneinfo.ZoneInfo('America/New_York')
-                        now_utc = dt.now(zoneinfo.ZoneInfo('UTC'))
-                        is_dst_now = now_utc.astimezone(et_tz).dst() != timedelta(0)
-
-                        # 獲取今天的 ET 日期
-                        today_et = now_utc.astimezone(et_tz).date()
-
-                        # 定義關鍵時間點 (ET)
-                        key_times_et = [
-                            time(4, 0),   # 盤前開始
-                            time(9, 30),  # 開盤
-                            time(16, 0),  # 收盤 (盤後開始)
-                            time(20, 0)   # 盤後結束
-                        ]
-
-                        # 轉換為完整的 datetime (ET timezone)
-                        key_datetimes = []
-                        for t in key_times_et:
-                            key_dt = dt.combine(today_et, t)
-                            key_dt_et = et_tz.localize(key_dt)
-                            key_datetimes.append(key_dt_et)
-
-                        # 添加 vertical lines 到圖表
-                        shapes = []
-                        for key_dt in key_datetimes:
-                            shapes.append(dict(
-                                type='line',
-                                x0=key_dt,
-                                x1=key_dt,
-                                y0=y_min,
-                                y1=y_max,
-                                line=dict(color='gray', width=1, dash='dash')
-                            ))
-
-                        fig_spark.update_layout(
-                            height=80, 
-                            margin=dict(l=0, r=40, t=5, b=5), 
-                            xaxis=dict(visible=False), 
-                            yaxis=dict(visible=False, range=[y_min, y_max]), 
-                            paper_bgcolor='rgba(0,0,0,0)', 
-                            plot_bgcolor='rgba(0,0,0,0)', 
-                            showlegend=False, 
-                            dragmode=False,
-                            shapes=shapes
-                        )
+                        fig_spark.update_layout(height=80, margin=dict(l=0, r=40, t=5, b=5), xaxis=dict(visible=False), yaxis=dict(visible=False, range=[y_min, y_max]), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False, dragmode=False)
                         
                         # [修正] 使用 VIP Class
                         price_html = f"""<div class="metric-card"><div class="metric-title">最新股價</div><div class="metric-value {reg_class}">{regular_price:.2f}</div><div class="metric-sub {reg_class}">{('+' if reg_change > 0 else '')}{reg_change:.2f} ({reg_pct:.2f}%)</div>"""
@@ -701,6 +669,8 @@ if ticker_input:
                         price_html += f"""<div class="spark-scale"><div class="{h_class}">H: {day_high_pct:+.1f}%</div><div style="margin-top:25px;" class="{l_class}">L: {day_low_pct:+.1f}%</div></div></div>"""
                         st.markdown(price_html, unsafe_allow_html=True)
                         st.plotly_chart(fig_spark, use_container_width=True, config={'displayModeBar': False, 'staticPlot': True})
+                        if ".TW" not in ticker_input:
+                            st.markdown(get_us_tw_timeline(), unsafe_allow_html=True)
                     else:
                         st.info("暫無即時數據")
 
