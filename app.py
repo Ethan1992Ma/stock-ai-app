@@ -247,7 +247,7 @@ if ticker_input:
             df['RSI'] = RSIIndicator(df['Close'], window=14).rsi()
             macd = MACD(df['Close'])
             df['MACD'], df['Signal'], df['Hist'] = macd.macd(), macd.macd_signal(), macd.macd_diff()
-            # [修正] 填補 MACD Hist 可能的 NaN 值，避免後續報錯
+            # [修復 Hist 錯誤] 
             df['Hist'] = df['Hist'].fillna(0)
             
             df['Vol_MA'] = SMAIndicator(df['Volume'], window=20).sma_indicator()
@@ -312,12 +312,12 @@ if ticker_input:
                             fill_color = "rgba(5, 154, 129, 0.15)" if day_close_reg >= day_open_reg else "rgba(242, 54, 69, 0.15)"
                             fig_spark.add_trace(go.Scatter(x=df_regular.index, y=df_regular['Close'], mode='lines', line=dict(color=spark_color, width=2), fill='tozeroy', fillcolor=fill_color))
 
-                        # --- [修正核心] 強制設定 X 軸範圍 (美股 04:00 - 20:00) 以對齊時間軸 ---
+                        # --- [核心修正: 鎖定美股冬令時間軸] ---
                         if ".TW" not in ticker_input:
                             current_date = df_intra_tz.index[0].date()
                             tz_ny = pytz.timezone('America/New_York')
                             
-                            # [關鍵修正] 使用 tz.localize 避免 .replace 造成的 LMT 誤差 (4分鐘誤差)
+                            # 強制鎖定美東時間 04:00 - 20:00 (對應台灣 17:00 - 09:00 冬令)
                             dt_start = tz_ny.localize(datetime.combine(current_date, time(4, 0)))
                             dt_end = tz_ny.localize(datetime.combine(current_date, time(20, 0)))
                             
@@ -345,37 +345,21 @@ if ticker_input:
                         st.markdown(price_html, unsafe_allow_html=True)
                         st.plotly_chart(fig_spark, use_container_width=True, config={'displayModeBar': False, 'staticPlot': True})
                         
-                        # --- [修正核心] 完美對齊的時間軸 HTML ---
+                        # --- [核心修正: 完美對齊的時間軸] ---
                         if ".TW" not in ticker_input:
-                            tz_tw = pytz.timezone('Asia/Taipei')
-                            # 同樣使用 localize 確保時間準確
-                            dt_pre = dt_start 
-                            dt_open = tz_ny.localize(datetime.combine(current_date, time(9, 30)))
-                            dt_close = tz_ny.localize(datetime.combine(current_date, time(16, 0)))
-                            dt_post = dt_end
-                            
-                            t1 = dt_pre.astimezone(tz_tw).strftime("%H:%M")
-                            t2 = dt_open.astimezone(tz_tw).strftime("%H:%M")
-                            t3 = dt_close.astimezone(tz_tw).strftime("%H:%M")
-                            t4 = dt_post.astimezone(tz_tw).strftime("%H:%M")
-                            
-                            # 04:00 -> 0%
-                            # 09:30 (5.5h) -> 5.5 / 16 = 34.375%
-                            # 16:00 (12h) -> 12 / 16 = 75%
-                            # 20:00 (16h) -> 100%
                             timeline_html = f"""
                             <div style="position: relative; height: 35px; margin-top: 5px; border-top: 1px dashed #eee; font-size: 0.65rem; color: #999; width: 100%;">
                                 <div style="position: absolute; left: 0%; transform: translateX(0%); text-align: left;">
-                                    <span>盤前</span><br><b style="color:#555">{t1}</b>
+                                    <span>盤前</span><br><b style="color:#555">17:00</b>
                                 </div>
                                 <div style="position: absolute; left: 34.375%; transform: translateX(-50%); text-align: center;">
-                                    <span>🔔 開盤</span><br><b style="color:#000">{t2}</b>
+                                    <span>🔔 開盤</span><br><b style="color:#000">22:30</b>
                                 </div>
                                 <div style="position: absolute; left: 75%; transform: translateX(-50%); text-align: center;">
-                                    <span>🌙 收盤</span><br><b style="color:#000">{t3}</b>
+                                    <span>🌙 收盤</span><br><b style="color:#000">05:00</b>
                                 </div>
                                 <div style="position: absolute; right: 0%; transform: translateX(0%); text-align: right;">
-                                    <span>結算</span><br><b style="color:#555">{t4}</b>
+                                    <span>結算</span><br><b style="color:#555">09:00</b>
                                 </div>
                             </div>
                             """
@@ -394,7 +378,7 @@ if ticker_input:
                 st.markdown("#### 🤖 策略訊號解讀")
                 k1, k2, k3, k4 = st.columns(4)
                 
-                # 確保 last['Hist'] 存在且不為空
+                # [修復 Hist 讀取] 
                 hist_val = last.get('Hist', 0)
                 
                 trend_status, trend_msg, trend_bg = "盤整", "💤 睡覺行情 (盤整)", "bg-gray"
@@ -453,7 +437,7 @@ if ticker_input:
                     fig_rsi.update_layout(height=200, margin=dict(l=10,r=10,t=10,b=10), template="plotly_white"); fig_rsi.update_xaxes(rangebreaks=range_breaks)
                     st.plotly_chart(fig_rsi, use_container_width=True)
                 with c_macd:
-                    # [修正] 確保 Hist 欄位存在且不為 NaN
+                    # [修復 Hist 繪圖]
                     hist_data = df_chart['Hist'].fillna(0)
                     fig_macd = go.Figure([go.Scatter(x=df_chart.index, y=df_chart['MACD'], line=dict(color='#2196F3')), go.Scatter(x=df_chart.index, y=df_chart['Signal'], line=dict(color='#FF5722')), go.Bar(x=df_chart.index, y=hist_data, marker_color=[(MACD_BULL_GROW if h>0 else MACD_BEAR_GROW) for h in hist_data])])
                     fig_macd.update_layout(height=200, margin=dict(l=10,r=10,t=10,b=10), showlegend=False, template="plotly_white"); fig_macd.update_xaxes(rangebreaks=range_breaks)
