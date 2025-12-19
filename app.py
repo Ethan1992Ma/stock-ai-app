@@ -2,13 +2,13 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
-from ta.trend import SMAIndicator, MACD
+from ta.trend import SMAIndicator
 from ta.momentum import RSIIndicator
 from datetime import time, datetime, timedelta
-import pytz # 用於處理時區
+import pytz
 
 # --- 1. 網頁設定 ---
-st.set_page_config(page_title="AI 智能操盤戰情室 (VIP 自動時區版)", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="AI 智能操盤戰情室 (VIP 穩定版)", layout="wide", initial_sidebar_state="collapsed")
 
 # --- 定義全域配色常數 ---
 COLOR_UP = "#059a81"      # 上漲 (松石綠)
@@ -43,17 +43,14 @@ st.markdown(f"""
     
     .stApp {{ background-color: #f8f9fa; }}
     
-    /* 強制文字全黑 */
     h1, h2, h3, h4, h5, h6, p, div, label, li, span {{
         color: #000000;
     }}
     
-    /* 修正輸入框標籤顏色 */
     .stTextInput > label, .stNumberInput > label, .stRadio > label {{
         color: #000000 !important;
     }}
     
-    /* VIP 顏色類別 (權重最高) */
     .txt-up-vip {{ color: {COLOR_UP} !important; font-weight: bold; }}
     .txt-down-vip {{ color: {COLOR_DOWN} !important; font-weight: bold; }}
     .txt-gray-vip {{ color: {COLOR_NEUTRAL} !important; }}
@@ -141,6 +138,7 @@ st.markdown(f"""
         display: inline-block; 
         margin-top: 8px;
     }}
+    
     .bg-up {{ background-color: {COLOR_UP}; }}
     .bg-down {{ background-color: {COLOR_DOWN}; }}
     .bg-gray {{ background-color: {COLOR_NEUTRAL}; }}
@@ -212,37 +210,30 @@ def fetch_exchange_rate_now():
         return 32.5
 
 def get_market_hours_tw():
-    """自動偵測目前是夏令還是冬令，並返回對應的台灣時間節點"""
     ny_tz = pytz.timezone('America/New_York')
     now_ny = datetime.now(ny_tz)
-    
-    # 判斷是否為夏令時間 (DST)
-    # dst() 如果不為 0，表示是夏令
     is_dst = now_ny.dst() != timedelta(0)
     
     if is_dst:
-        # 夏令時間 (美股 09:30 開盤 = 台灣 21:30)
         return {
-            "p_start": time(16, 0),  # 盤前開始
-            "open": time(21, 30),    # 開盤
-            "close": time(4, 0),     # 收盤 (隔天)
-            "p_end": time(8, 0),     # 盤後結束 (隔天)
-            "label": "夏令 (DST)"
+            "p_start": time(16, 0),
+            "open": time(21, 30),
+            "close": time(4, 0),
+            "p_end": time(8, 0),
+            "label": "夏令"
         }
     else:
-        # 冬令時間 (美股 09:30 開盤 = 台灣 22:30)
         return {
-            "p_start": time(17, 0),  # 盤前開始
-            "open": time(22, 30),    # 開盤
-            "close": time(5, 0),     # 收盤 (隔天)
-            "p_end": time(9, 0),     # 盤後結束 (隔天)
-            "label": "冬令 (Standard)"
+            "p_start": time(17, 0),
+            "open": time(22, 30),
+            "close": time(5, 0),
+            "p_end": time(9, 0),
+            "label": "冬令"
         }
 
 # --- 4. 定義局部刷新元件 ---
 @st.fragment
 def render_calculator_tab(current_close_price, exchange_rate, quote_type):
-    # 這裡的代碼保持不變，直接從上方複製過來的邏輯
     st.markdown("#### 🧮 交易前規劃")
     SEC_FEE_RATE = 0.0000278
     
@@ -334,9 +325,11 @@ def render_calculator_tab(current_close_price, exchange_rate, quote_type):
             if "target_sell_input" not in st.session_state:
                 st.session_state.target_sell_input = float(cost_price) * 1.05
             target_sell_input = st.number_input("預計賣出價格 (USD)", key="target_sell_input", step=0.1, format="%.2f")
+            
             net_revenue_usd = (target_sell_input * shares_held * (1 - SELL_RATE_FEE)) - SELL_FIXED_FEE
             net_profit_usd = net_revenue_usd - real_buy_cost_usd
             net_profit_twd = net_profit_usd * exchange_rate
+            
             res_class = "txt-up-vip" if net_profit_twd >= 0 else "txt-down-vip"
             res_prefix = "+" if net_profit_twd >= 0 else ""
 
@@ -458,7 +451,7 @@ with st.sidebar:
 # --- 6. 主程式 ---
 if ticker_input:
     try:
-        # 快取與數據檢查
+        # [State Check]
         if 'stored_ticker' not in st.session_state or st.session_state.stored_ticker != ticker_input:
             with st.spinner(f"正在抓取 {ticker_input} 數據..."):
                 df, df_intra, info, quote_type = fetch_stock_data_now(ticker_input)
@@ -476,8 +469,8 @@ if ticker_input:
                     if k in st.session_state:
                         del st.session_state[k]
 
-        # 從 Session State 取出數據
-        df = st.session_state.data_df
+        # [Important] Use .copy() to ensure we work on fresh data every run
+        df = st.session_state.data_df.copy()
         df_intra = st.session_state.data_df_intra
         info = st.session_state.data_info
         quote_type = st.session_state.data_quote_type
@@ -485,27 +478,24 @@ if ticker_input:
 
         if not df.empty and len(df) > 200:
             
-            # --- [B. 關鍵變數與計算] (移到這裡，確保全域可用，解決 NameError) ---
+            # --- [B. 變數與指標計算] (確保變數全域可用) ---
             last = df.iloc[-1]
             prev = df.iloc[-2]
             current_close_price = last['Close']
             
             live_price = df_intra['Close'].iloc[-1] if not df_intra.empty else 0
-            # 優先使用 currentPrice (盤中) 或 regularMarketPrice
             regular_price = info.get('currentPrice', info.get('regularMarketPrice', last['Close']))
             previous_close = info.get('previousClose', prev['Close'])
             
-            # 漲跌計算
             reg_change = regular_price - previous_close
             reg_pct = (reg_change / previous_close) * 100
             reg_class = "txt-up-vip" if reg_change > 0 else "txt-down-vip"
             
-            # 盤前盤後判斷
             is_extended = False
             ext_price = 0
             ext_pct = 0
             ext_label = ""
-            ext_class = "txt-gray-vip" # 預設
+            ext_class = "txt-gray-vip"
 
             if 'preMarketPrice' in info and info['preMarketPrice'] is not None:
                 ext_price = info['preMarketPrice']
@@ -516,7 +506,6 @@ if ticker_input:
                 is_extended = True
                 ext_label = "盤後"
             
-            # 如果 API 沒給 pre/post，但即時價跟收盤價差太多，視為試撮
             if not is_extended and abs(live_price - regular_price) / regular_price > 0.001:
                  ext_price = live_price
                  is_extended = True
@@ -527,7 +516,8 @@ if ticker_input:
                 ext_pct = (ext_change / regular_price) * 100
                 ext_class = "txt-up-vip" if ext_change > 0 else "txt-down-vip"
 
-            # --- C. 技術指標計算 ---
+            # --- 技術指標計算 (手動計算 MACD 避免報錯) ---
+            # 1. MA
             if strategy_mode == "🤖 自動判別 (Auto)":
                 mcap = info.get('marketCap', 0)
                 if mcap > 200_000_000_000:
@@ -544,14 +534,20 @@ if ticker_input:
             strat_fast_val = SMAIndicator(df['Close'], window=strat_fast).sma_indicator().iloc[-1]
             strat_slow_val = SMAIndicator(df['Close'], window=strat_slow).sma_indicator().iloc[-1]
             
+            # 2. RSI
             df['RSI'] = RSIIndicator(df['Close'], window=14).rsi()
-            macd = MACD(df['Close'])
-            df['MACD'] = macd.macd()
-            df['Signal'] = macd.macd_signal()
-            df['Hist'] = macd.macd_diff() 
+            
+            # 3. MACD (手動計算版 - 最穩定)
+            ema12 = df['Close'].ewm(span=12, adjust=False).mean()
+            ema26 = df['Close'].ewm(span=26, adjust=False).mean()
+            df['MACD'] = ema12 - ema26
+            df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+            df['Hist'] = df['MACD'] - df['Signal']
+            
+            # 4. Vol MA
             df['Vol_MA'] = SMAIndicator(df['Volume'], window=20).sma_indicator()
 
-            # --- D. 頁面佈局 ---
+            # --- 頁面佈局 ---
             tab_analysis, tab_calc, tab_inv = st.tabs(["📊 技術分析", "🧮 交易計算", "📦 庫存管理"])
 
             # ==========================================
@@ -566,7 +562,6 @@ if ticker_input:
                     fig_spark = go.Figure()
                     
                     if not df_intra.empty:
-                        # 1. 時間處理：轉台灣時間
                         df_intra.index = pd.to_datetime(df_intra.index)
                         if ".TW" in ticker_input:
                             tz = 'Asia/Taipei'
@@ -579,18 +574,13 @@ if ticker_input:
                             df_intra_tz = df_intra
 
                         plot_data = df_intra_tz.copy()
-                        # 如果是美股，強制轉為台灣時間顯示
                         if str(plot_data.index.tz) == 'America/New_York':
                             plot_data.index = plot_data.index.tz_convert('Asia/Taipei')
                         
-                        # 2. 自動判斷夏令/冬令時間
-                        market_times = get_market_hours_tw() # 取得動態時間點
+                        market_times = get_market_hours_tw()
                         
-                        # 3. 繪圖邏輯：全時段灰線，開盤時段彩線
-                        # 定義開盤過濾器
                         def is_market_open_dynamic(dt, m_times):
                             t = dt.time()
-                            # 跨日邏輯: open(晚) ~ close(早)
                             if t >= m_times['open'] or t <= m_times['close']:
                                 return True
                             return False
@@ -601,7 +591,7 @@ if ticker_input:
                             mode='lines', line=dict(color=COLOR_NEUTRAL, width=1.5, dash='dot'), hoverinfo='skip'
                         ))
                         
-                        # 彩色實線 (只畫開盤時段)
+                        # 彩色實線
                         regular_mask = plot_data.index.map(lambda x: is_market_open_dynamic(x, market_times))
                         df_reg = plot_data[regular_mask]
                         
@@ -620,13 +610,14 @@ if ticker_input:
                         if 'VWAP' in plot_data.columns:
                             fig_spark.add_trace(go.Scatter(x=plot_data.index, y=plot_data['VWAP'], mode='lines', line=dict(color=COLOR_VWAP, width=1), hoverinfo='skip'))
 
-                        # H/L 計算
                         day_high = plot_data['High'].max()
                         day_low = plot_data['Low'].min()
                         day_high_pct = ((day_high - previous_close) / previous_close) * 100
                         day_low_pct = ((day_low - previous_close) / previous_close) * 100
+
+                        y_min = day_low * 0.999
+                        y_max = day_high * 1.001
                         
-                        # X軸刻度生成 (基於 base date 和 market_times)
                         base_date = plot_data.index[0].date()
                         tick_vals = [
                             pd.Timestamp.combine(base_date, market_times['p_start']).tz_localize('Asia/Taipei'),
@@ -641,9 +632,6 @@ if ticker_input:
                             market_times['p_end'].strftime("%H:%M")
                         ]
 
-                        y_min = day_low * 0.999
-                        y_max = day_high * 1.001
-                        
                         fig_spark.update_layout(
                             height=100, margin=dict(l=0, r=40, t=5, b=20),
                             paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
@@ -825,6 +813,7 @@ if ticker_input:
                 st.plotly_chart(fig_rsi, use_container_width=True, config={'displayModeBar': False}, theme=None)
 
                 # --- MACD ---
+                # 使用手動計算的欄位，確保絕對有值
                 full_macd_colors = []
                 for i in range(len(df)):
                     hist = df['Hist'].iloc[i]
