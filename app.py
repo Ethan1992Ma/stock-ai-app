@@ -5,7 +5,6 @@ import plotly.graph_objects as go
 from ta.trend import SMAIndicator
 from ta.momentum import RSIIndicator
 from datetime import time, datetime, timedelta
-import pytz
 
 # --- 1. 網頁設定 ---
 st.set_page_config(page_title="AI 智能操盤戰情室 (VIP 穩定版)", layout="wide", initial_sidebar_state="collapsed")
@@ -209,12 +208,21 @@ def fetch_exchange_rate_now():
     except:
         return 32.5
 
-def get_market_hours_tw():
-    ny_tz = pytz.timezone('America/New_York')
-    now_ny = datetime.now(ny_tz)
-    is_dst = now_ny.dst() != timedelta(0)
-    
+def get_market_hours_tw_simple():
+    """使用月份簡單判斷美股夏令/冬令 (不依賴 pytz)"""
+    today = datetime.now()
+    # 美股夏令：3月第二個週日 ~ 11月第一個週日
+    # 簡單判斷：3月中 ~ 11月初為夏令 (粗略但有效)
+    is_dst = False
+    if 3 < today.month < 11:
+        is_dst = True
+    elif today.month == 3 and today.day > 14:
+        is_dst = True
+    elif today.month == 11 and today.day < 7:
+        is_dst = True
+        
     if is_dst:
+        # 夏令 (開盤 21:30)
         return {
             "p_start": time(16, 0),
             "open": time(21, 30),
@@ -223,6 +231,7 @@ def get_market_hours_tw():
             "label": "夏令"
         }
     else:
+        # 冬令 (開盤 22:30)
         return {
             "p_start": time(17, 0),
             "open": time(22, 30),
@@ -451,6 +460,10 @@ with st.sidebar:
 # --- 6. 主程式 ---
 if ticker_input:
     try:
+        # [變數初始化] 避免 NameError
+        reg_class = "txt-gray-vip"
+        previous_close = 0
+        
         # [State Check]
         if 'stored_ticker' not in st.session_state or st.session_state.stored_ticker != ticker_input:
             with st.spinner(f"正在抓取 {ticker_input} 數據..."):
@@ -476,7 +489,7 @@ if ticker_input:
         quote_type = st.session_state.data_quote_type
         exchange_rate = st.session_state.data_exchange_rate
 
-        if not df.empty and len(df) > 200:
+        if not df.empty and len(df) > 100: # 稍微降低門檻
             
             # --- [B. 變數與指標計算] (確保變數全域可用) ---
             last = df.iloc[-1]
@@ -577,7 +590,8 @@ if ticker_input:
                         if str(plot_data.index.tz) == 'America/New_York':
                             plot_data.index = plot_data.index.tz_convert('Asia/Taipei')
                         
-                        market_times = get_market_hours_tw()
+                        # 改用簡單版函數
+                        market_times = get_market_hours_tw_simple()
                         
                         def is_market_open_dynamic(dt, m_times):
                             t = dt.time()
@@ -813,8 +827,11 @@ if ticker_input:
                 st.plotly_chart(fig_rsi, use_container_width=True, config={'displayModeBar': False}, theme=None)
 
                 # --- MACD ---
-                # 使用手動計算的欄位，確保絕對有值
                 full_macd_colors = []
+                # 確保 Hist 欄位存在
+                if 'Hist' not in df.columns:
+                     df['Hist'] = df['MACD'] - df['Signal']
+
                 for i in range(len(df)):
                     hist = df['Hist'].iloc[i]
                     prev_hist = df['Hist'].iloc[i-1] if i > 0 else 0
