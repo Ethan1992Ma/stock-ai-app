@@ -7,7 +7,7 @@ from ta.momentum import RSIIndicator
 from datetime import time, datetime, timedelta
 
 # --- 1. 網頁設定 ---
-st.set_page_config(page_title="AI 智能操盤戰情室 (VIP 穩定版)", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="AI 智能操盤戰情室 (VIP 冬令穩定版)", layout="wide", initial_sidebar_state="collapsed")
 
 # --- 定義全域配色常數 ---
 COLOR_UP = "#059a81"      # 上漲 (松石綠)
@@ -28,6 +28,15 @@ VOL_MA_LINE = "#000000"
 
 # VWAP 配色
 COLOR_VWAP = "#FF9800"
+
+# --- [設定] 固定冬令時間 (台灣時間) ---
+MARKET_TIME = {
+    "p_start": time(17, 0),  # 盤前開始
+    "open": time(22, 30),    # 開盤
+    "close": time(5, 0),     # 收盤 (隔天)
+    "p_end": time(9, 0),     # 盤後結束 (隔天)
+    "label": "冬令"
+}
 
 # --- 2. CSS 美化 ---
 st.markdown(f"""
@@ -207,38 +216,6 @@ def fetch_exchange_rate_now():
         return 32.5
     except:
         return 32.5
-
-def get_market_hours_tw_simple():
-    """使用月份簡單判斷美股夏令/冬令 (不依賴 pytz)"""
-    today = datetime.now()
-    # 美股夏令：3月第二個週日 ~ 11月第一個週日
-    # 簡單判斷：3月中 ~ 11月初為夏令 (粗略但有效)
-    is_dst = False
-    if 3 < today.month < 11:
-        is_dst = True
-    elif today.month == 3 and today.day > 14:
-        is_dst = True
-    elif today.month == 11 and today.day < 7:
-        is_dst = True
-        
-    if is_dst:
-        # 夏令 (開盤 21:30)
-        return {
-            "p_start": time(16, 0),
-            "open": time(21, 30),
-            "close": time(4, 0),
-            "p_end": time(8, 0),
-            "label": "夏令"
-        }
-    else:
-        # 冬令 (開盤 22:30)
-        return {
-            "p_start": time(17, 0),
-            "open": time(22, 30),
-            "close": time(5, 0),
-            "p_end": time(9, 0),
-            "label": "冬令"
-        }
 
 # --- 4. 定義局部刷新元件 ---
 @st.fragment
@@ -489,9 +466,9 @@ if ticker_input:
         quote_type = st.session_state.data_quote_type
         exchange_rate = st.session_state.data_exchange_rate
 
-        if not df.empty and len(df) > 100: # 稍微降低門檻
+        if not df.empty and len(df) > 100: 
             
-            # --- [B. 變數與指標計算] (確保變數全域可用) ---
+            # --- [B. 全域變數計算] ---
             last = df.iloc[-1]
             prev = df.iloc[-2]
             current_close_price = last['Close']
@@ -529,7 +506,7 @@ if ticker_input:
                 ext_pct = (ext_change / regular_price) * 100
                 ext_class = "txt-up-vip" if ext_change > 0 else "txt-down-vip"
 
-            # --- 技術指標計算 (手動計算 MACD 避免報錯) ---
+            # --- [C. 確保 MACD 運算 (解決 KeyError)] ---
             # 1. MA
             if strategy_mode == "🤖 自動判別 (Auto)":
                 mcap = info.get('marketCap', 0)
@@ -550,12 +527,12 @@ if ticker_input:
             # 2. RSI
             df['RSI'] = RSIIndicator(df['Close'], window=14).rsi()
             
-            # 3. MACD (手動計算版 - 最穩定)
+            # 3. MACD (強制計算，不依賴 'ta' 套件的 Hist，自己算最穩)
             ema12 = df['Close'].ewm(span=12, adjust=False).mean()
             ema26 = df['Close'].ewm(span=26, adjust=False).mean()
             df['MACD'] = ema12 - ema26
             df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
-            df['Hist'] = df['MACD'] - df['Signal']
+            df['Hist'] = df['MACD'] - df['Signal'] # 這裡強制寫入了 Hist 欄位
             
             # 4. Vol MA
             df['Vol_MA'] = SMAIndicator(df['Volume'], window=20).sma_indicator()
@@ -590,8 +567,8 @@ if ticker_input:
                         if str(plot_data.index.tz) == 'America/New_York':
                             plot_data.index = plot_data.index.tz_convert('Asia/Taipei')
                         
-                        # 改用簡單版函數
-                        market_times = get_market_hours_tw_simple()
+                        # 使用寫死的冬令時間
+                        market_times = MARKET_TIME
                         
                         def is_market_open_dynamic(dt, m_times):
                             t = dt.time()
@@ -828,10 +805,7 @@ if ticker_input:
 
                 # --- MACD ---
                 full_macd_colors = []
-                # 確保 Hist 欄位存在
-                if 'Hist' not in df.columns:
-                     df['Hist'] = df['MACD'] - df['Signal']
-
+                # 這裡 Hist 已經絕對存在
                 for i in range(len(df)):
                     hist = df['Hist'].iloc[i]
                     prev_hist = df['Hist'].iloc[i-1] if i > 0 else 0
