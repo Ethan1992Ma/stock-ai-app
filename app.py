@@ -29,7 +29,7 @@ VOL_MA_LINE = "#000000"
 # VWAP 配色
 COLOR_VWAP = "#FF9800"
 
-# --- 2. CSS 美化 (維持深色模式修復) ---
+# --- 2. CSS 美化 ---
 st.markdown(f"""
     <style>
     :root {{
@@ -73,7 +73,7 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. 核心函數 ---
+# --- 3. 數據抓取函數 ---
 def fetch_stock_data_now(ticker):
     stock = yf.Ticker(ticker)
     df = stock.history(period="2y")
@@ -312,7 +312,7 @@ with st.sidebar:
 # --- 6. 主程式 ---
 if ticker_input:
     try:
-        # [變數初始化]
+        # [變數初始化] 避免 NameError
         reg_class = "txt-gray-vip"
         previous_close = 0
         
@@ -334,7 +334,7 @@ if ticker_input:
                     if k in st.session_state:
                         del st.session_state[k]
 
-        # Use .copy() to prevent mutation
+        # [Important] Use .copy() to ensure we work on fresh data every run
         df = st.session_state.data_df.copy()
         df_intra = st.session_state.data_df_intra
         info = st.session_state.data_info
@@ -381,7 +381,7 @@ if ticker_input:
                 ext_pct = (ext_change / regular_price) * 100
                 ext_class = "txt-up-vip" if ext_change > 0 else "txt-down-vip"
 
-            # --- [C. 確保 MACD 運算 (使用 ta 套件)] ---
+            # --- [C. 指標計算 (使用 ta 套件)] ---
             # 1. MA
             if strategy_mode == "🤖 自動判別 (Auto)":
                 mcap = info.get('marketCap', 0)
@@ -402,11 +402,11 @@ if ticker_input:
             # 2. RSI
             df['RSI'] = RSIIndicator(df['Close'], window=14).rsi()
             
-            # 3. MACD (改回使用 ta 套件)
+            # 3. MACD (使用 ta 套件，與原始版本一致)
             macd_obj = MACD(df['Close'])
             df['MACD'] = macd_obj.macd()
             df['Signal'] = macd_obj.macd_signal()
-            df['Hist'] = macd_obj.macd_diff() # ta 套件產生的 Hist 欄位
+            df['Hist'] = macd_obj.macd_diff()
             
             # 4. Vol MA
             df['Vol_MA'] = SMAIndicator(df['Volume'], window=20).sma_indicator()
@@ -441,17 +441,36 @@ if ticker_input:
                         if str(plot_data.index.tz) == 'America/New_York':
                             plot_data.index = plot_data.index.tz_convert('Asia/Taipei')
                         
-                        # 恢復原始畫線邏輯 (整條線)
-                        day_open = plot_data['Open'].iloc[0]
-                        day_close = plot_data['Close'].iloc[-1]
-                        spark_color = COLOR_UP if day_close >= day_open else COLOR_DOWN
-                        fill_color = "rgba(5, 154, 129, 0.15)" if day_close >= day_open else "rgba(242, 54, 69, 0.15)"
+                        # --- 走勢圖邏輯優化 (圖層疊加法) ---
                         
+                        # 1. 底層：全時段灰色虛線 (背景)
                         fig_spark.add_trace(go.Scatter(
                             x=plot_data.index, y=plot_data['Close'], 
-                            mode='lines', line=dict(color=spark_color, width=2), 
-                            fill='tozeroy', fillcolor=fill_color
+                            mode='lines', line=dict(color=COLOR_NEUTRAL, width=1.5, dash='dot'), hoverinfo='skip'
                         ))
+                        
+                        # 2. 上層：開盤時段 (22:30~05:00) 彩色實線 (主角)
+                        # 使用冬令時間: 22:30 ~ 05:00 (跨日)
+                        def is_market_open_winter(dt):
+                            t = dt.time()
+                            if t >= time(22, 30) or t <= time(5, 0):
+                                return True
+                            return False
+
+                        regular_mask = plot_data.index.map(is_market_open_winter)
+                        df_reg = plot_data[regular_mask]
+                        
+                        if not df_reg.empty:
+                            d_open = df_reg['Open'].iloc[0]
+                            d_close = df_reg['Close'].iloc[-1]
+                            spk_color = COLOR_UP if d_close >= d_open else COLOR_DOWN
+                            fill_rgba = "rgba(5, 154, 129, 0.15)" if d_close >= d_open else "rgba(242, 54, 69, 0.15)"
+                            
+                            fig_spark.add_trace(go.Scatter(
+                                x=df_reg.index, y=df_reg['Close'], 
+                                mode='lines', line=dict(color=spk_color, width=2), 
+                                fill='tozeroy', fillcolor=fill_rgba
+                            ))
 
                         if 'VWAP' in plot_data.columns:
                             fig_spark.add_trace(go.Scatter(x=plot_data.index, y=plot_data['VWAP'], mode='lines', line=dict(color=COLOR_VWAP, width=1), hoverinfo='skip'))
@@ -485,7 +504,7 @@ if ticker_input:
                             yaxis=dict(visible=False, range=[y_min, y_max])
                         )
                         
-                        price_html = f"""<div class="metric-card"><div class="metric-title">最新股價</div><div class="metric-value {reg_class}">{regular_price:.2f}</div><div class="metric-sub {reg_class}">{('+' if reg_change > 0 else '')}{reg_change:.2f} ({reg_pct:.2f}%)</div>"""
+                        price_html = f"""<div class="metric-card"><div class="metric-title">最新股價 (冬令)</div><div class="metric-value {reg_class}">{regular_price:.2f}</div><div class="metric-sub {reg_class}">{('+' if reg_change > 0 else '')}{reg_change:.2f} ({reg_pct:.2f}%)</div>"""
                         if is_extended:
                             price_html += f"""<div class="ext-price-box"><span class="ext-label">{ext_label}</span><span class="{ext_class}">{ext_price:.2f} ({('+' if ext_pct > 0 else '')}{ext_pct:.2f}%)</span></div>"""
                         
