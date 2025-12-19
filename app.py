@@ -4,15 +4,16 @@ import pandas as pd
 import plotly.graph_objects as go
 from ta.trend import SMAIndicator, MACD
 from ta.momentum import RSIIndicator
-from datetime import time, timedelta
+from datetime import time, datetime, timedelta
+import pytz # 用於處理時區
 
 # --- 1. 網頁設定 ---
-st.set_page_config(page_title="AI 智能操盤戰情室 (VIP 終極版)", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="AI 智能操盤戰情室 (VIP 自動時區版)", layout="wide", initial_sidebar_state="collapsed")
 
-# --- 定義全域配色常數 (VIP 客製化) ---
+# --- 定義全域配色常數 ---
 COLOR_UP = "#059a81"      # 上漲 (松石綠)
 COLOR_DOWN = "#f23645"    # 下跌 (法拉利紅)
-COLOR_NEUTRAL = "#adb5bd" # 中性灰 (盤前盤後用)
+COLOR_NEUTRAL = "#adb5bd" # 中性灰
 
 # MACD 配色
 MACD_BULL_GROW = "#2db09c"
@@ -42,14 +43,17 @@ st.markdown(f"""
     
     .stApp {{ background-color: #f8f9fa; }}
     
-    h1, h2, h3, h4, h5, h6, p, div, label, li {{
-        color: #000000 !important;
+    /* 強制文字全黑 */
+    h1, h2, h3, h4, h5, h6, p, div, label, li, span {{
+        color: #000000;
     }}
     
+    /* 修正輸入框標籤顏色 */
     .stTextInput > label, .stNumberInput > label, .stRadio > label {{
         color: #000000 !important;
     }}
     
+    /* VIP 顏色類別 (權重最高) */
     .txt-up-vip {{ color: {COLOR_UP} !important; font-weight: bold; }}
     .txt-down-vip {{ color: {COLOR_DOWN} !important; font-weight: bold; }}
     .txt-gray-vip {{ color: {COLOR_NEUTRAL} !important; }}
@@ -57,7 +61,6 @@ st.markdown(f"""
     .chart-title {{
         font-size: 1.1rem;
         font-weight: 700;
-        color: #000000 !important;
         margin-top: 10px;
         margin-bottom: 0px; 
         padding-left: 5px;
@@ -73,8 +76,8 @@ st.markdown(f"""
         position: relative;
     }}
     .metric-title {{ color: #6c757d !important; font-size: 0.9rem; font-weight: 700; margin-bottom: 5px; }}
-    .metric-value {{ font-size: 1.8rem; font-weight: 800; color: #212529 !important; }}
-    .metric-sub {{ font-size: 0.9rem; color: #888 !important; margin-top: 5px; }}
+    .metric-value {{ font-size: 1.8rem; font-weight: 800; }}
+    .metric-sub {{ font-size: 0.9rem; margin-top: 5px; }}
     
     .ext-price-box {{
         background-color: #f1f3f5;
@@ -82,12 +85,10 @@ st.markdown(f"""
         border-radius: 6px;
         font-size: 0.85rem;
         font-weight: 600;
-        color: #666 !important;
         margin-top: 8px;
         display: inline-block;
     }}
-    .ext-label {{ font-size: 0.75rem; color: #999 !important; margin-right: 5px; }}
-
+    
     .spark-scale {{
         position: absolute;
         right: 15px;
@@ -95,7 +96,6 @@ st.markdown(f"""
         transform: translateY(-50%);
         text-align: right;
         font-size: 0.7rem;
-        color: #adb5bd !important;
         line-height: 1.4;
         font-weight: 600;
     }}
@@ -109,9 +109,7 @@ st.markdown(f"""
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         margin-bottom: 20px;
     }}
-    .ai-title {{ font-weight: bold; font-size: 1.2rem; color: #0d47a1 !important; margin-bottom: 10px; display: flex; align-items: center; }}
-    .ai-content {{ font-size: 1rem; color: #333 !important; line-height: 1.6; }}
-
+    
     .ma-container {{
         display: flex;
         flex-wrap: wrap;
@@ -143,7 +141,6 @@ st.markdown(f"""
         display: inline-block; 
         margin-top: 8px;
     }}
-    
     .bg-up {{ background-color: {COLOR_UP}; }}
     .bg-down {{ background-color: {COLOR_DOWN}; }}
     .bg-gray {{ background-color: {COLOR_NEUTRAL}; }}
@@ -161,7 +158,6 @@ st.markdown(f"""
     .calc-header {{
         font-size: 1rem;
         font-weight: bold;
-        color: #444 !important;
         margin-bottom: 10px;
         border-left: 4px solid {COLOR_UP};
         padding-left: 8px;
@@ -196,7 +192,7 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. 數據抓取函數 ---
+# --- 3. 核心函數 ---
 def fetch_stock_data_now(ticker):
     stock = yf.Ticker(ticker)
     df = stock.history(period="2y")
@@ -215,11 +211,39 @@ def fetch_exchange_rate_now():
     except:
         return 32.5
 
-# --- 4. 定義局部刷新元件 (@st.fragment) ---
+def get_market_hours_tw():
+    """自動偵測目前是夏令還是冬令，並返回對應的台灣時間節點"""
+    ny_tz = pytz.timezone('America/New_York')
+    now_ny = datetime.now(ny_tz)
+    
+    # 判斷是否為夏令時間 (DST)
+    # dst() 如果不為 0，表示是夏令
+    is_dst = now_ny.dst() != timedelta(0)
+    
+    if is_dst:
+        # 夏令時間 (美股 09:30 開盤 = 台灣 21:30)
+        return {
+            "p_start": time(16, 0),  # 盤前開始
+            "open": time(21, 30),    # 開盤
+            "close": time(4, 0),     # 收盤 (隔天)
+            "p_end": time(8, 0),     # 盤後結束 (隔天)
+            "label": "夏令 (DST)"
+        }
+    else:
+        # 冬令時間 (美股 09:30 開盤 = 台灣 22:30)
+        return {
+            "p_start": time(17, 0),  # 盤前開始
+            "open": time(22, 30),    # 開盤
+            "close": time(5, 0),     # 收盤 (隔天)
+            "p_end": time(9, 0),     # 盤後結束 (隔天)
+            "label": "冬令 (Standard)"
+        }
+
+# --- 4. 定義局部刷新元件 ---
 @st.fragment
 def render_calculator_tab(current_close_price, exchange_rate, quote_type):
+    # 這裡的代碼保持不變，直接從上方複製過來的邏輯
     st.markdown("#### 🧮 交易前規劃")
-    
     SEC_FEE_RATE = 0.0000278
     
     if quote_type == 'ETF':
@@ -261,7 +285,7 @@ def render_calculator_tab(current_close_price, exchange_rate, quote_type):
             st.markdown(f"""
             <div class="calc-result">
                 <div class="calc-res-title">可購買股數</div>
-                <div class="calc-res-val" style="color:#0d6efd !important;">{max_shares:.2f} 股</div>
+                <div class="calc-res-val txt-up-vip">{max_shares:.2f} 股</div>
                 <div style="font-size:0.8rem; margin-top:5px; color:#666 !important;">
                 總成本: ${total_buy_cost_usd:.2f} USD (約 {total_buy_cost_twd:.0f} TWD)
                 </div>
@@ -310,11 +334,9 @@ def render_calculator_tab(current_close_price, exchange_rate, quote_type):
             if "target_sell_input" not in st.session_state:
                 st.session_state.target_sell_input = float(cost_price) * 1.05
             target_sell_input = st.number_input("預計賣出價格 (USD)", key="target_sell_input", step=0.1, format="%.2f")
-            
             net_revenue_usd = (target_sell_input * shares_held * (1 - SELL_RATE_FEE)) - SELL_FIXED_FEE
             net_profit_usd = net_revenue_usd - real_buy_cost_usd
             net_profit_twd = net_profit_usd * exchange_rate
-            
             res_class = "txt-up-vip" if net_profit_twd >= 0 else "txt-down-vip"
             res_prefix = "+" if net_profit_twd >= 0 else ""
 
@@ -331,7 +353,6 @@ def render_calculator_tab(current_close_price, exchange_rate, quote_type):
 @st.fragment
 def render_inventory_tab(current_close_price, quote_type):
     st.markdown("#### 📦 庫存損益與加碼攤平")
-    
     SEC_FEE_RATE = 0.0000278
     if quote_type == 'ETF':
         BUY_FIXED_FEE = 3.0
@@ -437,8 +458,8 @@ with st.sidebar:
 # --- 6. 主程式 ---
 if ticker_input:
     try:
+        # 快取與數據檢查
         if 'stored_ticker' not in st.session_state or st.session_state.stored_ticker != ticker_input:
-            
             with st.spinner(f"正在抓取 {ticker_input} 數據..."):
                 df, df_intra, info, quote_type = fetch_stock_data_now(ticker_input)
                 exchange_rate = fetch_exchange_rate_now()
@@ -455,6 +476,7 @@ if ticker_input:
                     if k in st.session_state:
                         del st.session_state[k]
 
+        # 從 Session State 取出數據
         df = st.session_state.data_df
         df_intra = st.session_state.data_df_intra
         info = st.session_state.data_info
@@ -463,7 +485,49 @@ if ticker_input:
 
         if not df.empty and len(df) > 200:
             
-            # --- A. 指標計算 ---
+            # --- [B. 關鍵變數與計算] (移到這裡，確保全域可用，解決 NameError) ---
+            last = df.iloc[-1]
+            prev = df.iloc[-2]
+            current_close_price = last['Close']
+            
+            live_price = df_intra['Close'].iloc[-1] if not df_intra.empty else 0
+            # 優先使用 currentPrice (盤中) 或 regularMarketPrice
+            regular_price = info.get('currentPrice', info.get('regularMarketPrice', last['Close']))
+            previous_close = info.get('previousClose', prev['Close'])
+            
+            # 漲跌計算
+            reg_change = regular_price - previous_close
+            reg_pct = (reg_change / previous_close) * 100
+            reg_class = "txt-up-vip" if reg_change > 0 else "txt-down-vip"
+            
+            # 盤前盤後判斷
+            is_extended = False
+            ext_price = 0
+            ext_pct = 0
+            ext_label = ""
+            ext_class = "txt-gray-vip" # 預設
+
+            if 'preMarketPrice' in info and info['preMarketPrice'] is not None:
+                ext_price = info['preMarketPrice']
+                is_extended = True
+                ext_label = "盤前"
+            elif 'postMarketPrice' in info and info['postMarketPrice'] is not None:
+                ext_price = info['postMarketPrice']
+                is_extended = True
+                ext_label = "盤後"
+            
+            # 如果 API 沒給 pre/post，但即時價跟收盤價差太多，視為試撮
+            if not is_extended and abs(live_price - regular_price) / regular_price > 0.001:
+                 ext_price = live_price
+                 is_extended = True
+                 ext_label = "盤後/試撮"
+
+            if is_extended:
+                ext_change = ext_price - regular_price
+                ext_pct = (ext_change / regular_price) * 100
+                ext_class = "txt-up-vip" if ext_change > 0 else "txt-down-vip"
+
+            # --- C. 技術指標計算 ---
             if strategy_mode == "🤖 自動判別 (Auto)":
                 mcap = info.get('marketCap', 0)
                 if mcap > 200_000_000_000:
@@ -487,165 +551,122 @@ if ticker_input:
             df['Hist'] = macd.macd_diff() 
             df['Vol_MA'] = SMAIndicator(df['Volume'], window=20).sma_indicator()
 
-            last = df.iloc[-1]
-            prev = df.iloc[-2]
-            current_close_price = last['Close']
-
-            # --- 建立 Tabs 分頁 ---
+            # --- D. 頁面佈局 ---
             tab_analysis, tab_calc, tab_inv = st.tabs(["📊 技術分析", "🧮 交易計算", "📦 庫存管理"])
 
             # ==========================================
             # 分頁 1: 技術分析
             # ==========================================
             with tab_analysis:
-                if not df_intra.empty:
-                    df_intra.index = pd.to_datetime(df_intra.index)
-                    if ".TW" in ticker_input:
-                        tz = 'Asia/Taipei'
-                        open_time = time(9, 0)
-                        close_time = time(13, 30)
-                    else:
-                        tz = 'America/New_York'
-                        open_time = time(9, 30)
-                        close_time = time(16, 0)
-                    try:
-                        df_intra_tz = df_intra.tz_convert(tz)
-                    except:
-                        df_intra_tz = df_intra
+                st.markdown(f"### 📱 {info.get('longName', ticker_input)} ({ticker_input})")
+                st.caption(f"目前策略：{strat_desc}")
 
-                    # 1. 準備數據 (轉台灣時間)
-                    plot_data = df_intra_tz.copy()
-                    if str(plot_data.index.tz) == 'America/New_York':
-                        plot_data.index = plot_data.index.tz_convert('Asia/Taipei')
-                    
-                    # 2. 分割時段 (基於台灣時間的冬令美股時段)
-                    # 盤前: 17:00 - 22:30
-                    # 盤中: 22:30 - 05:00 (隔天)
-                    # 盤後: 05:00 - 09:00 (隔天)
-                    
-                    # 技巧：我們用 fill 來區分
-                    # 但因為 Plotly 的 fill 比較笨，我們直接畫三條線
-                    # 這裡為了簡化且高效，我們用一種聰明的方法：
-                    # 全程畫灰線，然後在「盤中時段」疊加一條彩色線
-                    
+                c1, c2, c3, c4 = st.columns(4)
+                with c1:
                     fig_spark = go.Figure()
                     
-                    # 底層：全時段灰色虛線
-                    fig_spark.add_trace(go.Scatter(
-                        x=plot_data.index, 
-                        y=plot_data['Close'], 
-                        mode='lines', 
-                        line=dict(color=COLOR_NEUTRAL, width=1.5, dash='dot'),
-                        hoverinfo='skip'
-                    ))
-                    
-                    # 上層：盤中時段彩色實線 + 填色
-                    # 找出盤中時段的數據
-                    # 注意：這裡的判斷比較複雜，因為跨日。
-                    # 簡單作法：只要時間在 22:30 ~ 05:00 之間
-                    
-                    # 定義時間過濾器
-                    def is_regular_market_tw(dt):
-                        t = dt.time()
-                        # 冬令: 22:30 ~ 05:00
-                        # 夏令: 21:30 ~ 04:00 (目前先寫死冬令，或者讓程式自動抓開盤狀態太複雜，我們先用視覺近似)
-                        # 更精準作法：yfinance 其實有 'Market Hours' 資訊，但在這我們用簡單時間切分
-                        if (t >= time(22, 30)) or (t <= time(5, 0)):
-                            return True
-                        return False
+                    if not df_intra.empty:
+                        # 1. 時間處理：轉台灣時間
+                        df_intra.index = pd.to_datetime(df_intra.index)
+                        if ".TW" in ticker_input:
+                            tz = 'Asia/Taipei'
+                        else:
+                            tz = 'America/New_York'
+                        
+                        try:
+                            df_intra_tz = df_intra.tz_convert(tz)
+                        except:
+                            df_intra_tz = df_intra
 
-                    regular_mask = plot_data.index.map(is_regular_market_tw)
-                    df_reg = plot_data[regular_mask]
-                    
-                    if not df_reg.empty:
-                        day_open = df_reg['Open'].iloc[0]
-                        day_close = df_reg['Close'].iloc[-1]
+                        plot_data = df_intra_tz.copy()
+                        # 如果是美股，強制轉為台灣時間顯示
+                        if str(plot_data.index.tz) == 'America/New_York':
+                            plot_data.index = plot_data.index.tz_convert('Asia/Taipei')
                         
-                        spark_color = COLOR_UP if day_close >= day_open else COLOR_DOWN
-                        fill_rgba = "rgba(5, 154, 129, 0.15)" if day_close >= day_open else "rgba(242, 54, 69, 0.15)"
+                        # 2. 自動判斷夏令/冬令時間
+                        market_times = get_market_hours_tw() # 取得動態時間點
                         
+                        # 3. 繪圖邏輯：全時段灰線，開盤時段彩線
+                        # 定義開盤過濾器
+                        def is_market_open_dynamic(dt, m_times):
+                            t = dt.time()
+                            # 跨日邏輯: open(晚) ~ close(早)
+                            if t >= m_times['open'] or t <= m_times['close']:
+                                return True
+                            return False
+
+                        # 底層灰線
                         fig_spark.add_trace(go.Scatter(
-                            x=df_reg.index, 
-                            y=df_reg['Close'], 
-                            mode='lines', 
-                            line=dict(color=spark_color, width=2), 
-                            fill='tozeroy', 
-                            fillcolor=fill_rgba
+                            x=plot_data.index, y=plot_data['Close'], 
+                            mode='lines', line=dict(color=COLOR_NEUTRAL, width=1.5, dash='dot'), hoverinfo='skip'
                         ))
+                        
+                        # 彩色實線 (只畫開盤時段)
+                        regular_mask = plot_data.index.map(lambda x: is_market_open_dynamic(x, market_times))
+                        df_reg = plot_data[regular_mask]
+                        
+                        if not df_reg.empty:
+                            d_open = df_reg['Open'].iloc[0]
+                            d_close = df_reg['Close'].iloc[-1]
+                            spk_color = COLOR_UP if d_close >= d_open else COLOR_DOWN
+                            fill_rgba = "rgba(5, 154, 129, 0.15)" if d_close >= d_open else "rgba(242, 54, 69, 0.15)"
+                            
+                            fig_spark.add_trace(go.Scatter(
+                                x=df_reg.index, y=df_reg['Close'], 
+                                mode='lines', line=dict(color=spk_color, width=2), 
+                                fill='tozeroy', fillcolor=fill_rgba
+                            ))
 
-                    if 'VWAP' in plot_data.columns:
-                        fig_spark.add_trace(go.Scatter(x=plot_data.index, y=plot_data['VWAP'], mode='lines', line=dict(color=COLOR_VWAP, width=1), hoverinfo='skip'))
+                        if 'VWAP' in plot_data.columns:
+                            fig_spark.add_trace(go.Scatter(x=plot_data.index, y=plot_data['VWAP'], mode='lines', line=dict(color=COLOR_VWAP, width=1), hoverinfo='skip'))
 
-                    # 計算 H/L
-                    day_high = plot_data['High'].max()
-                    day_low = plot_data['Low'].min()
-                    day_high_pct = ((day_high - previous_close) / previous_close) * 100
-                    day_low_pct = ((day_low - previous_close) / previous_close) * 100
+                        # H/L 計算
+                        day_high = plot_data['High'].max()
+                        day_low = plot_data['Low'].min()
+                        day_high_pct = ((day_high - previous_close) / previous_close) * 100
+                        day_low_pct = ((day_low - previous_close) / previous_close) * 100
+                        
+                        # X軸刻度生成 (基於 base date 和 market_times)
+                        base_date = plot_data.index[0].date()
+                        tick_vals = [
+                            pd.Timestamp.combine(base_date, market_times['p_start']).tz_localize('Asia/Taipei'),
+                            pd.Timestamp.combine(base_date, market_times['open']).tz_localize('Asia/Taipei'),
+                            pd.Timestamp.combine(base_date + timedelta(days=1), market_times['close']).tz_localize('Asia/Taipei'),
+                            pd.Timestamp.combine(base_date + timedelta(days=1), market_times['p_end']).tz_localize('Asia/Taipei')
+                        ]
+                        tick_texts = [
+                            market_times['p_start'].strftime("%H:%M"),
+                            market_times['open'].strftime("%H:%M"),
+                            market_times['close'].strftime("%H:%M"),
+                            market_times['p_end'].strftime("%H:%M")
+                        ]
 
-                    y_min = day_low * 0.999
-                    y_max = day_high * 1.001
-                    
-                    # [刻度設定] 17:00, 22:30, 05:00, 09:00
-                    # 我們需要找出這些時間點在今天的具體 datetime
-                    # 假設數據是今天的，我們抓數據的第一天當基準
-                    base_date = plot_data.index[0].date()
-                    # 建立關鍵時間點列表 (注意跨日)
-                    tick_vals = []
-                    tick_text = []
-                    
-                    # 17:00 (盤前開始)
-                    t1 = pd.Timestamp.combine(base_date, time(17, 0)).tz_localize('Asia/Taipei')
-                    tick_vals.append(t1)
-                    tick_text.append("17:00")
-                    
-                    # 22:30 (開盤)
-                    t2 = pd.Timestamp.combine(base_date, time(22, 30)).tz_localize('Asia/Taipei')
-                    tick_vals.append(t2)
-                    tick_text.append("22:30")
-                    
-                    # 05:00 (收盤 - 隔天)
-                    t3 = pd.Timestamp.combine(base_date + timedelta(days=1), time(5, 0)).tz_localize('Asia/Taipei')
-                    tick_vals.append(t3)
-                    tick_text.append("05:00")
-                    
-                    # 09:00 (盤後結束 - 隔天)
-                    t4 = pd.Timestamp.combine(base_date + timedelta(days=1), time(9, 0)).tz_localize('Asia/Taipei')
-                    tick_vals.append(t4)
-                    tick_text.append("09:00")
-
-                    fig_spark.update_layout(
-                        height=100, 
-                        margin=dict(l=0, r=40, t=5, b=20),
-                        paper_bgcolor='rgba(0,0,0,0)', 
-                        plot_bgcolor='rgba(0,0,0,0)', 
-                        showlegend=False, 
-                        dragmode=False,
-                        xaxis=dict(
-                            visible=True,
-                            tickmode='array', # 強制使用我們定義的刻度
-                            tickvals=tick_vals,
-                            ticktext=tick_text,
-                            tickfont=dict(size=10, color='#000000'),
-                            showgrid=False,
-                            showline=False,
-                            zeroline=False
-                        ),
-                        yaxis=dict(visible=False, range=[y_min, y_max])
-                    )
-                    
-                    price_html = f"""<div class="metric-card"><div class="metric-title">最新股價</div><div class="metric-value {reg_class}">{regular_price:.2f}</div><div class="metric-sub {reg_class}">{('+' if reg_change > 0 else '')}{reg_change:.2f} ({reg_pct:.2f}%)</div>"""
-                    
-                    if is_extended:
-                        price_html += f"""<div class="ext-price-box"><span class="ext-label">{ext_label}</span><span class="{ext_class}">{ext_price:.2f} ({('+' if ext_pct > 0 else '')}{ext_pct:.2f}%)</span></div>"""
-                    
-                    h_class = "txt-up-vip" if day_high_pct >= 0 else "txt-down-vip"
-                    l_class = "txt-up-vip" if day_low_pct >= 0 else "txt-down-vip"
-                    
-                    price_html += f"""<div class="spark-scale"><div class="{h_class}">H: {day_high_pct:+.1f}%</div><div style="margin-top:25px;" class="{l_class}">L: {day_low_pct:+.1f}%</div></div></div>"""
-                    st.markdown(price_html, unsafe_allow_html=True)
-                    st.plotly_chart(fig_spark, use_container_width=True, config={'displayModeBar': False, 'staticPlot': True})
-                else:
-                    st.info("暫無即時數據")
+                        y_min = day_low * 0.999
+                        y_max = day_high * 1.001
+                        
+                        fig_spark.update_layout(
+                            height=100, margin=dict(l=0, r=40, t=5, b=20),
+                            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
+                            showlegend=False, dragmode=False,
+                            xaxis=dict(
+                                visible=True, tickmode='array', tickvals=tick_vals, ticktext=tick_texts,
+                                tickfont=dict(size=10, color='#000000'), showgrid=False
+                            ),
+                            yaxis=dict(visible=False, range=[y_min, y_max])
+                        )
+                        
+                        price_html = f"""<div class="metric-card"><div class="metric-title">最新股價 ({market_times['label']})</div><div class="metric-value {reg_class}">{regular_price:.2f}</div><div class="metric-sub {reg_class}">{('+' if reg_change > 0 else '')}{reg_change:.2f} ({reg_pct:.2f}%)</div>"""
+                        if is_extended:
+                            price_html += f"""<div class="ext-price-box"><span class="ext-label">{ext_label}</span><span class="{ext_class}">{ext_price:.2f} ({('+' if ext_pct > 0 else '')}{ext_pct:.2f}%)</span></div>"""
+                        
+                        h_class = "txt-up-vip" if day_high_pct >= 0 else "txt-down-vip"
+                        l_class = "txt-up-vip" if day_low_pct >= 0 else "txt-down-vip"
+                        price_html += f"""<div class="spark-scale"><div class="{h_class}">H: {day_high_pct:+.1f}%</div><div style="margin-top:25px;" class="{l_class}">L: {day_low_pct:+.1f}%</div></div></div>"""
+                        
+                        st.markdown(price_html, unsafe_allow_html=True)
+                        st.plotly_chart(fig_spark, use_container_width=True, config={'displayModeBar': False, 'staticPlot': True})
+                    else:
+                        st.info("暫無即時數據")
 
                 with c2:
                     pe = info.get('trailingPE', 'N/A')
@@ -661,17 +682,12 @@ if ticker_input:
                 st.markdown("#### 🤖 策略訊號解讀")
                 k1, k2, k3, k4 = st.columns(4)
                 
-                trend_status = "盤整"
-                rsi_status = "中性"
-                vol_status = "一般"
-                macd_status = "不明"
-
                 trend_msg = "💤 睡覺行情 (盤整)"
                 trend_bg = "bg-gray"
                 trend_desc = "多空不明，建議觀望"
                 if last['Close'] > strat_fast_val > strat_slow_val:
                     trend_msg = "🚀 火力全開！(多頭)"
-                    trend_bg = "bg-up" 
+                    trend_bg = "bg-up"
                     trend_desc = "均線向上，順勢操作"
                     trend_status = "多頭"
                 elif last['Close'] < strat_fast_val < strat_slow_val:
@@ -679,6 +695,8 @@ if ticker_input:
                     trend_bg = "bg-down"
                     trend_desc = "均線蓋頭，保守為宜"
                     trend_status = "空頭"
+                else:
+                    trend_status = "盤整"
                 
                 with k1:
                     st.markdown(f"""<div class="metric-card"><div class="metric-title">趨勢訊號</div><div class="metric-value" style="font-size:1.3rem;">{trend_msg}</div><div><span class="status-badge {trend_bg}">MA{strat_fast} vs MA{strat_slow}</span></div><div class="metric-sub">{trend_desc}</div></div>""", unsafe_allow_html=True)
@@ -688,12 +706,14 @@ if ticker_input:
                 v_bg = "bg-gray"
                 if vol_r > 2.0: 
                     v_msg = "🔥 資金派對 (爆量)"
-                    v_bg = "bg-down" 
+                    v_bg = "bg-down"
                     vol_status = "爆量"
                 elif vol_r > 1.0:
                     v_msg = "💧 人氣回溫" 
                     v_bg = "bg-blue"
                     vol_status = "溫和"
+                else:
+                    vol_status = "一般"
                 with k2:
                     st.markdown(f"""<div class="metric-card"><div class="metric-title">量能判讀</div><div class="metric-value" style="font-size:1.3rem;">{v_msg}</div><div><span class="status-badge {v_bg}">{vol_r:.1f} 倍均量</span></div><div class="metric-sub">成交量活躍度分析</div></div>""", unsafe_allow_html=True)
 
@@ -711,9 +731,11 @@ if ticker_input:
                     r_bg = "bg-down"
                     rsi_status = "過熱"
                 elif r_val < 30: 
-                    r_msg = "🧊 跌過頭囉 (超賣)"
+                    r_msg = "🧊 跌過頭囉 (超賣)" 
                     r_bg = "bg-up"
                     rsi_status = "超賣"
+                else:
+                    rsi_status = "中性"
                 with k4:
                     st.markdown(f"""<div class="metric-card"><div class="metric-title">RSI 強弱</div><div class="metric-value" style="font-size:1.3rem;">{r_msg}</div><div><span class="status-badge {r_bg}">數值: {r_val:.1f}</span></div><div class="metric-sub">乖離率判斷</div></div>""", unsafe_allow_html=True)
 
@@ -752,15 +774,10 @@ if ticker_input:
                 fig_price.add_trace(go.Scatter(x=df_chart.index, y=df_chart['MA_120'], line=dict(color='#78909C', width=1.5, dash='dot'), name='MA120', showlegend=True))
                 
                 fig_price.update_layout(
-                    template="plotly_white",
-                    height=400, 
-                    margin=dict(l=10, r=10, t=10, b=100),
-                    paper_bgcolor='white', plot_bgcolor='white', 
-                    xaxis_rangeslider_visible=False, dragmode=False, 
+                    template="plotly_white", height=400, margin=dict(l=10, r=10, t=10, b=100),
+                    paper_bgcolor='white', plot_bgcolor='white', xaxis_rangeslider_visible=False, dragmode=False, 
                     legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5, font=dict(color='black')),
-                    font=dict(color='black'), 
-                    xaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0'),
-                    yaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0')
+                    font=dict(color='black'), xaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0'), yaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0')
                 )
                 fig_price.update_xaxes(rangebreaks=range_breaks)
                 st.plotly_chart(fig_price, use_container_width=True, config={'displayModeBar': False}, theme=None)
@@ -772,10 +789,8 @@ if ticker_input:
                     row = df_chart.iloc[i]
                     vol = row['Volume']
                     if vol > max_vol: max_vol = vol
-                    
                     vol_ma_val = row['Vol_MA'] if pd.notna(row['Vol_MA']) and row['Vol_MA'] > 0 else vol
                     ratio = vol / vol_ma_val if vol_ma_val > 0 else 1.0
-                    
                     if ratio >= 2.0: c = VOL_EXPLODE
                     elif ratio >= 1.0: c = VOL_NORMAL
                     else: c = VOL_SHRINK
@@ -787,14 +802,10 @@ if ticker_input:
                 fig_vol.add_trace(go.Scatter(x=df_chart.index, y=df_chart['Vol_MA'], mode='lines', line=dict(color=VOL_MA_LINE, width=1.0), name='Vol MA'))
                 
                 fig_vol.update_layout(
-                    template="plotly_white",
-                    height=250, 
-                    margin=dict(l=10, r=10, t=10, b=10), 
-                    paper_bgcolor='white', plot_bgcolor='white', 
-                    dragmode=False, showlegend=False,
+                    template="plotly_white", height=250, margin=dict(l=10, r=10, t=10, b=10), 
+                    paper_bgcolor='white', plot_bgcolor='white', dragmode=False, showlegend=False,
                     yaxis=dict(range=[0, max_vol * 1.25], color='black', showgrid=True, gridcolor='#f0f0f0'),
-                    xaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0'),
-                    font=dict(color='black')
+                    xaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0'), font=dict(color='black')
                 )
                 fig_vol.update_xaxes(rangebreaks=range_breaks)
                 st.plotly_chart(fig_vol, use_container_width=True, config={'displayModeBar': False}, theme=None)
@@ -806,11 +817,9 @@ if ticker_input:
                 fig_rsi.add_hline(y=30, line_dash="dash", line_color=COLOR_UP)   
                 
                 fig_rsi.update_layout(
-                    template="plotly_white",
-                    height=250, margin=dict(l=10, r=10, t=10, b=10), 
+                    template="plotly_white", height=250, margin=dict(l=10, r=10, t=10, b=10), 
                     paper_bgcolor='white', plot_bgcolor='white', dragmode=False,
-                    font=dict(color='black'), xaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0'), 
-                    yaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0')
+                    font=dict(color='black'), xaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0'), yaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0')
                 )
                 fig_rsi.update_xaxes(rangebreaks=range_breaks)
                 st.plotly_chart(fig_rsi, use_container_width=True, config={'displayModeBar': False}, theme=None)
@@ -820,7 +829,6 @@ if ticker_input:
                 for i in range(len(df)):
                     hist = df['Hist'].iloc[i]
                     prev_hist = df['Hist'].iloc[i-1] if i > 0 else 0
-                    
                     if hist >= 0:
                         col = MACD_BULL_GROW if hist > prev_hist else MACD_BULL_SHRINK
                     else:
@@ -837,11 +845,9 @@ if ticker_input:
                 fig_macd.add_trace(go.Bar(x=df_chart.index, y=df_chart['Hist'], marker_color=chart_macd_colors, name='Hist'))
                 
                 fig_macd.update_layout(
-                    template="plotly_white",
-                    height=250, margin=dict(l=10, r=10, t=10, b=10), 
+                    template="plotly_white", height=250, margin=dict(l=10, r=10, t=10, b=10), 
                     paper_bgcolor='white', plot_bgcolor='white', dragmode=False,
-                    font=dict(color='black'), xaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0'), 
-                    yaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0')
+                    font=dict(color='black'), xaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0'), yaxis=dict(color='black', showgrid=True, gridcolor='#f0f0f0')
                 )
                 fig_macd.update_xaxes(rangebreaks=range_breaks)
                 st.plotly_chart(fig_macd, use_container_width=True, config={'displayModeBar': False}, theme=None)
