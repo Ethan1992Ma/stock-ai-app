@@ -4,12 +4,12 @@ import pandas as pd
 import plotly.graph_objects as go
 from ta.trend import SMAIndicator
 from ta.momentum import RSIIndicator
-from datetime import time, datetime, timedelta
+from datetime import time, timedelta
 
 # --- 1. 網頁設定 ---
-st.set_page_config(page_title="AI 智能操盤戰情室 (VIP 冬令穩定版)", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="AI 智能操盤戰情室 (VIP 終極穩定版)", layout="wide", initial_sidebar_state="collapsed")
 
-# --- 定義全域配色常數 ---
+# --- 定義全域配色常數 (VIP 客製化) ---
 COLOR_UP = "#059a81"      # 上漲 (松石綠)
 COLOR_DOWN = "#f23645"    # 下跌 (法拉利紅)
 COLOR_NEUTRAL = "#adb5bd" # 中性灰
@@ -29,8 +29,9 @@ VOL_MA_LINE = "#000000"
 # VWAP 配色
 COLOR_VWAP = "#FF9800"
 
-# --- [設定] 固定冬令時間 (台灣時間) ---
-MARKET_TIME = {
+# --- [設定] 固定冬令時間 (Taiwan Time) ---
+# 用於 Sparkline 的 X 軸刻度
+MARKET_TIME_WINTER = {
     "p_start": time(17, 0),  # 盤前開始
     "open": time(22, 30),    # 開盤
     "close": time(5, 0),     # 收盤 (隔天)
@@ -38,9 +39,10 @@ MARKET_TIME = {
     "label": "冬令"
 }
 
-# --- 2. CSS 美化 ---
+# --- 2. CSS 美化 (含權重修正) ---
 st.markdown(f"""
     <style>
+    /* [強制亮色模式] */
     :root {{
         --primary-color: #ff4b4b;
         --background-color: #f8f9fa;
@@ -51,6 +53,7 @@ st.markdown(f"""
     
     .stApp {{ background-color: #f8f9fa; }}
     
+    /* 強制所有文字深色 (解決 iPhone Dark Mode) */
     h1, h2, h3, h4, h5, h6, p, div, label, li, span {{
         color: #000000;
     }}
@@ -59,6 +62,7 @@ st.markdown(f"""
         color: #000000 !important;
     }}
     
+    /* --- [VIP 顏色專用類別] 權重最高 --- */
     .txt-up-vip {{ color: {COLOR_UP} !important; font-weight: bold; }}
     .txt-down-vip {{ color: {COLOR_DOWN} !important; font-weight: bold; }}
     .txt-gray-vip {{ color: {COLOR_NEUTRAL} !important; }}
@@ -198,7 +202,7 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. 核心函數 ---
+# --- 3. 數據抓取函數 ---
 def fetch_stock_data_now(ticker):
     stock = yf.Ticker(ticker)
     df = stock.history(period="2y")
@@ -437,9 +441,17 @@ with st.sidebar:
 # --- 6. 主程式 ---
 if ticker_input:
     try:
-        # [變數初始化] 避免 NameError
+        # [關鍵修正1] 變數預先初始化 (防止 NameError)
         reg_class = "txt-gray-vip"
+        reg_pct = 0
+        regular_price = 0
         previous_close = 0
+        reg_change = 0
+        ext_label = ""
+        ext_class = ""
+        ext_price = 0
+        ext_pct = 0
+        is_extended = False
         
         # [State Check]
         if 'stored_ticker' not in st.session_state or st.session_state.stored_ticker != ticker_input:
@@ -481,12 +493,6 @@ if ticker_input:
             reg_pct = (reg_change / previous_close) * 100
             reg_class = "txt-up-vip" if reg_change > 0 else "txt-down-vip"
             
-            is_extended = False
-            ext_price = 0
-            ext_pct = 0
-            ext_label = ""
-            ext_class = "txt-gray-vip"
-
             if 'preMarketPrice' in info and info['preMarketPrice'] is not None:
                 ext_price = info['preMarketPrice']
                 is_extended = True
@@ -527,12 +533,13 @@ if ticker_input:
             # 2. RSI
             df['RSI'] = RSIIndicator(df['Close'], window=14).rsi()
             
-            # 3. MACD (強制計算，不依賴 'ta' 套件的 Hist，自己算最穩)
+            # 3. MACD (手動計算版 - 最穩定)
             ema12 = df['Close'].ewm(span=12, adjust=False).mean()
             ema26 = df['Close'].ewm(span=26, adjust=False).mean()
             df['MACD'] = ema12 - ema26
             df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
-            df['Hist'] = df['MACD'] - df['Signal'] # 這裡強制寫入了 Hist 欄位
+            # [關鍵修正2] 確保 'Hist' 在所有情況下都被計算
+            df['Hist'] = df['MACD'] - df['Signal'] 
             
             # 4. Vol MA
             df['Vol_MA'] = SMAIndicator(df['Volume'], window=20).sma_indicator()
@@ -568,10 +575,11 @@ if ticker_input:
                             plot_data.index = plot_data.index.tz_convert('Asia/Taipei')
                         
                         # 使用寫死的冬令時間
-                        market_times = MARKET_TIME
+                        market_times = MARKET_TIME_WINTER
                         
                         def is_market_open_dynamic(dt, m_times):
                             t = dt.time()
+                            # 冬令: 22:30 ~ 05:00
                             if t >= m_times['open'] or t <= m_times['close']:
                                 return True
                             return False
@@ -805,8 +813,8 @@ if ticker_input:
 
                 # --- MACD ---
                 full_macd_colors = []
-                # 這裡 Hist 已經絕對存在
                 for i in range(len(df)):
+                    # [確保] 這裡取的值是前面手動計算好的
                     hist = df['Hist'].iloc[i]
                     prev_hist = df['Hist'].iloc[i-1] if i > 0 else 0
                     if hist >= 0:
