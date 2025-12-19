@@ -6,7 +6,7 @@ from ta.trend import SMAIndicator, MACD
 from ta.momentum import RSIIndicator
 from datetime import time
 import zoneinfo
-from datetime import datetime as dt
+from datetime import datetime as dt, timedelta
 
 # --- 1. 網頁設定 ---
 st.set_page_config(page_title="AI 智能操盤戰情室 (VIP 終極版)", layout="wide", initial_sidebar_state="collapsed")
@@ -659,7 +659,7 @@ if ticker_input:
                         # 自動判斷 DST
                         et_tz = zoneinfo.ZoneInfo('America/New_York')
                         now_utc = dt.now(zoneinfo.ZoneInfo('UTC'))
-                        is_dst_now = now_utc.astimezone(et_tz).dst() != dt.timedelta(0)
+                        is_dst_now = now_utc.astimezone(et_tz).dst() != timedelta(0)
                         season = "夏令" if is_dst_now else "冬令"
                         time_diff = 12 if is_dst_now else 13  # 台灣 - ET
 
